@@ -170,20 +170,20 @@ export function storyArcs(p: ProfileRow): StoryArc[] {
   const arcs: StoryArc[] = [];
   arcs.push({
     code: "main_white_coat",
-    title: "THE WHITE COAT ASCENSION",
-    tagline: "Become an exceptional PA student, then an exceptional clinician.",
+    title: "THE SCHOLAR'S ASCENSION",
+    tagline: "Master your chosen field of study, one focused hour at a time.",
     attribute: "INT",
     titleReward: "white_coat",
     chapters: [
       { number: 1, name: "Chapter I: The Foundations", description: "Set your baseline and build the study habit.", objectives: [
-        { title: "Log your current program GPA", tracker: { type: "metric_logged", metric: "program_gpa" }, target: 1 },
+        { title: "Log your current GPA", tracker: { type: "metric_logged", metric: "program_gpa" }, target: 1 },
         { title: "20 focused study hours", tracker: { type: "activity_minutes", activities: ["study", "quiz", "practice_exam"] }, target: 1200 },
       ] },
       { number: 2, name: "Chapter II: The Gauntlet of Knowledge", description: "Volume and pressure.", objectives: [
         { title: "100 focused study hours", tracker: { type: "activity_minutes", activities: ["study", "quiz", "practice_exam"] }, target: 6000 },
         { title: "Defeat 3 boss dungeons", tracker: { type: "dungeon_clears", kinds: ["boss_exam"] }, target: 3 },
       ] },
-      { number: 3, name: "Chapter III: The Clinical Crucible", description: "Reason like a clinician.", objectives: [
+      { number: 3, name: "Chapter III: The Proving Grounds", description: "Apply what you know under pressure.", objectives: [
         { title: "25 quiz or practice-exam blocks", tracker: { type: "activity_count", activities: ["quiz", "practice_exam"] }, target: 25 },
         { title: "Retrieval accuracy ≥ 80%", tracker: { type: "metric_reach", metric: "retrieval_accuracy", target: 80, direction: "higher" }, target: 1 },
       ] },
@@ -193,14 +193,14 @@ export function storyArcs(p: ProfileRow): StoryArc[] {
       ] },
       { number: 5, name: "Chapter V: Ascension", description: "Mastery.", objectives: [
         { title: "300 focused study hours", tracker: { type: "activity_minutes", activities: ["study", "quiz", "practice_exam"] }, target: 18000 },
-        { title: "Program GPA ≥ 3.70", tracker: { type: "metric_reach", metric: "program_gpa", target: 3.7, direction: "higher" }, target: 1 },
+        { title: "GPA ≥ 3.70", tracker: { type: "metric_reach", metric: "program_gpa", target: 3.7, direction: "higher" }, target: 1 },
       ] },
     ],
   });
   arcs.push({
     code: "main_titan",
     title: "THE TITAN'S BODY",
-    tagline: "Build 10 pounds of lean muscle, slowly and sustainably.",
+    tagline: "Build lean muscle slowly and sustainably: +5 lb, then +10 lb.",
     attribute: "STR",
     titleReward: "titan",
     chapters: [
@@ -223,18 +223,21 @@ export function storyArcs(p: ProfileRow): StoryArc[] {
   arcs.push({
     code: "main_limiter",
     title: "BREAK THE LIMITER",
-    tagline: "Run a sub-18-minute 5K.",
+    tagline: "Climb the 5K ladder, from your first timed run to sub-20.",
     attribute: "END",
     titleReward: "limiter_broken",
     chapters: [
-      { number: 1, name: "Chapter I: Rekindling", description: "Rebuild volume.", objectives: [
-        { title: "Run 50 km", tracker: { type: "activity_quantity", activities: ["run"] }, target: 50 },
-        { title: "Current 5K ≤ 21:00", tracker: { type: "metric_reach", metric: "run_5k", target: 1260, direction: "lower" }, target: 1 },
+      { number: 1, name: "Chapter I: First Steps", description: "Build the habit and set a baseline.", objectives: [
+        { title: "Run 25 km", tracker: { type: "activity_quantity", activities: ["run"] }, target: 25 },
+        { title: "Log a timed 5K", tracker: { type: "metric_logged", metric: "run_5k" }, target: 1 },
       ] },
-      { number: 2, name: "Chapter II: The 20-Minute Wall", description: "Threshold work.", objectives: [{ title: "Current 5K ≤ 20:00", tracker: { type: "metric_reach", metric: "run_5k", target: 1200, direction: "lower" }, target: 1 }] },
-      { number: 3, name: "Chapter III: Reclaim the Former Self", description: "Match your all-time best.", objectives: [{ title: "Current 5K ≤ 19:30", tracker: { type: "metric_reach", metric: "run_5k", target: 1170, direction: "lower" }, target: 1 }] },
-      { number: 4, name: "Chapter IV: Uncharted Pace", description: "Beyond any past self.", objectives: [{ title: "Current 5K ≤ 19:00", tracker: { type: "metric_reach", metric: "run_5k", target: 1140, direction: "lower" }, target: 1 }] },
-      { number: 5, name: "Chapter V: Break the Limiter", description: "Sub-18.", objectives: [{ title: "Current 5K under 18:00", tracker: { type: "metric_reach", metric: "run_5k", target: 1079, direction: "lower" }, target: 1 }] },
+      { number: 2, name: "Chapter II: The 30-Minute Gate", description: "Run the whole way.", objectives: [{ title: "Current 5K ≤ 30:00", tracker: { type: "metric_reach", metric: "run_5k", target: 1800, direction: "lower" }, target: 1 }] },
+      { number: 3, name: "Chapter III: The 25-Minute Wall", description: "Add tempo and intervals.", objectives: [
+        { title: "Run 100 km in total", tracker: { type: "activity_quantity", activities: ["run"] }, target: 100 },
+        { title: "Current 5K ≤ 25:00", tracker: { type: "metric_reach", metric: "run_5k", target: 1500, direction: "lower" }, target: 1 },
+      ] },
+      { number: 4, name: "Chapter IV: Uncharted Pace", description: "Threshold work pays off.", objectives: [{ title: "Current 5K ≤ 22:30", tracker: { type: "metric_reach", metric: "run_5k", target: 1350, direction: "lower" }, target: 1 }] },
+      { number: 5, name: "Chapter V: Break the Limiter", description: "Sub-20.", objectives: [{ title: "Current 5K under 20:00", tracker: { type: "metric_reach", metric: "run_5k", target: 1199, direction: "lower" }, target: 1 }] },
     ],
   });
   arcs.push({

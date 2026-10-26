@@ -156,7 +156,7 @@ function MetricForm({ metricId, onDone }: { metricId?: string; onDone: () => voi
     e.preventDefault();
     setError(null);
     const value = parseDisplayInput(m!.unit as UnitKind, raw, units);
-    if (value === null) return setError(m!.unit === "duration" ? "Enter a time like 21:34 or 1:32:10." : "Enter a number.");
+    if (value === null) return setError(m!.unit === "duration" ? "Enter a time like 25:00 or 1:32:10." : "Enter a number.");
     cmd.mutate({ type: "log_metric", metricId: m!.id, value, recordedOn: date, context, note: note || undefined, idempotencyKey: key }, { onSuccess: onDone, onError: (err) => setError(err.message) });
   }
 
@@ -180,7 +180,7 @@ function MetricForm({ metricId, onDone }: { metricId?: string; onDone: () => voi
       <p className="text-xs text-faint">{m.description}</p>
       <div className="grid grid-cols-2 gap-3">
         <Field label={`Value${m.unit === "duration" ? " (m:ss / h:mm:ss)" : unit.label ? ` (${unit.label})` : ""}`} htmlFor="met-val">
-          <Input id="met-val" inputMode={m.unit === "duration" ? "text" : "decimal"} placeholder={m.unit === "duration" ? "21:34" : ""} value={raw} onChange={(e) => setRaw(e.target.value)} required autoFocus />
+          <Input id="met-val" inputMode={m.unit === "duration" ? "text" : "decimal"} placeholder={m.unit === "duration" ? "25:00" : ""} value={raw} onChange={(e) => setRaw(e.target.value)} required autoFocus />
         </Field>
         <Field label="Date" htmlFor="met-date">
           <Input id="met-date" type="date" value={date} max={data?.today} onChange={(e) => setDate(e.target.value)} required />

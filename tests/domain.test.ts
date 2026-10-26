@@ -42,7 +42,7 @@ describe("rank thresholds", () => {
     expect(rankFromPercentile(standardScore(9, t, "higher"))).toBe("E");
     // lower-is-better (5K seconds)
     const run = [2100, 1800, 1560, 1350, 1170, 1020] as const;
-    expect(rankFromPercentile(standardScore(1294, run, "lower"))).toBe("A");
+    expect(rankFromPercentile(standardScore(1365, run, "lower"))).toBe("B");
     expect(standardScore(1000, run, "lower")).toBeGreaterThan(standardScore(1100, run, "lower"));
     expect(() => standardScore(5, [1, 2, 3, 3, 5, 6], "higher")).toThrow();
   });
@@ -57,21 +57,21 @@ describe("rank thresholds", () => {
 describe("units", () => {
   it("converts mass, height and durations accurately", () => {
     expect(lbToKg(205)).toBeCloseTo(92.986, 3);
-    expect(kgToLb(lbToKg(145))).toBeCloseTo(145, 9);
+    expect(kgToLb(lbToKg(170))).toBeCloseTo(170, 9);
     expect(feetInchesToCm(5, 9)).toBeCloseTo(175.26, 2);
     expect(cmToFeetInches(175.3)).toEqual({ feet: 5, inches: 9 });
     expect(parseDuration("5:40")).toBe(340);
-    expect(parseDuration("21:34")).toBe(1294);
+    expect(parseDuration("22:45")).toBe(1365);
     expect(parseDuration("1:32:10")).toBe(5530);
     expect(parseDuration("5:75")).toBeNull();
     expect(parseDuration("abc")).toBeNull();
-    expect(formatDuration(1294)).toBe("21:34");
+    expect(formatDuration(1365)).toBe("22:45");
     expect(formatDuration(5530)).toBe("1:32:10");
   });
   it("round-trips display input in both systems", () => {
     expect(parseDisplayInput("mass", "205", "imperial")).toBeCloseTo(92.986, 3);
     expect(formatValue("mass", lbToKg(205), "imperial")).toBe("205 lb");
-    expect(formatValue("distance", 49.8897, "imperial")).toBe("31 mi");
+    expect(formatValue("distance", 42.195, "imperial")).toBe("26.22 mi");
     expect(parseDisplayInput("currency", "$1,250", "imperial")).toBe(1250);
     expect(parseDisplayInput("mass", "", "metric")).toBeNull();
   });
@@ -140,11 +140,11 @@ describe("XP system", () => {
   it("personal records: baseline, min delta, cooldown, historical", () => {
     const def = METRIC_BY_ID.run_5k;
     const cfg = DEFAULT_XP_CONFIG;
-    expect(evaluatePersonalRecord(def, { value: 1294, context: "current", recorded_on: "2026-10-26" }, [], null, "2026-10-26", cfg)).toMatchObject({ isBaseline: true, amount: 0 });
-    expect(evaluatePersonalRecord(def, { value: 1280, context: "current", recorded_on: "2026-10-26" }, [{ value: 1294 }], null, "2026-10-26", cfg)).toMatchObject({ isRecord: true, amount: 200 });
-    expect(evaluatePersonalRecord(def, { value: 1293, context: "current", recorded_on: "2026-10-26" }, [{ value: 1294 }], null, "2026-10-26", cfg).isRecord).toBe(false);
-    expect(evaluatePersonalRecord(def, { value: 1200, context: "current", recorded_on: "2026-10-26" }, [{ value: 1294 }], "2026-10-22", "2026-10-26", cfg)).toMatchObject({ isRecord: true, amount: 0 });
-    expect(evaluatePersonalRecord(def, { value: 1100, context: "historical", recorded_on: "2026-10-26" }, [{ value: 1294 }], null, "2026-10-26", cfg).amount).toBe(0);
+    expect(evaluatePersonalRecord(def, { value: 1365, context: "current", recorded_on: "2026-10-26" }, [], null, "2026-10-26", cfg)).toMatchObject({ isBaseline: true, amount: 0 });
+    expect(evaluatePersonalRecord(def, { value: 1350, context: "current", recorded_on: "2026-10-26" }, [{ value: 1365 }], null, "2026-10-26", cfg)).toMatchObject({ isRecord: true, amount: 200 });
+    expect(evaluatePersonalRecord(def, { value: 1364, context: "current", recorded_on: "2026-10-26" }, [{ value: 1365 }], null, "2026-10-26", cfg).isRecord).toBe(false);
+    expect(evaluatePersonalRecord(def, { value: 1200, context: "current", recorded_on: "2026-10-26" }, [{ value: 1365 }], "2026-10-22", "2026-10-26", cfg)).toMatchObject({ isRecord: true, amount: 0 });
+    expect(evaluatePersonalRecord(def, { value: 1100, context: "historical", recorded_on: "2026-10-26" }, [{ value: 1365 }], null, "2026-10-26", cfg).amount).toBe(0);
   });
 });
 
@@ -172,7 +172,7 @@ describe("catalog requirements", () => {
     expect(requirementMet({ stat: "x", op: "lte", value: 1200, label: "" }, { x: Number.POSITIVE_INFINITY })).toBe(false);
   });
   it("estimates VO2 (VDOT) from race times with the Daniels–Gilbert model", () => {
-    expect(vdotFromRace(5000, 1294)).toBeCloseTo(45.6, 0);
-    expect(vdotFromRace(5000, 1170)).toBeGreaterThan(vdotFromRace(5000, 1294));
+    expect(vdotFromRace(5000, 1365)).toBeCloseTo(42.8, 0);
+    expect(vdotFromRace(5000, 1200)).toBeGreaterThan(vdotFromRace(5000, 1365));
   });
 });

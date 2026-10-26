@@ -2,8 +2,19 @@ import { randomUUID } from "node:crypto";
 import { LocalDatabase } from "@/lib/server/db/local";
 import { ensureCatalogs } from "@/lib/server/catalog";
 import { GameService } from "@/lib/server/game/service";
-import { INITIAL_METRICS, INITIAL_PROFILE } from "@/lib/game/initial-profile";
 import type { ProfileInput } from "@/lib/game/commands";
+import type { EntryContext } from "@/lib/domain/types";
+
+/** A made-up sample player used only by tests (the app itself starts every player blank). */
+export const SAMPLE_METRICS: { metricId: string; value: number; context: EntryContext; note: string }[] = [
+  { metricId: "bench_press_1rm", value: 80, context: "current", note: "test" },
+  { metricId: "mile_time", value: 6 * 60, context: "historical", note: "past best" },
+  { metricId: "run_5k", value: 20 * 60, context: "historical", note: "past best" },
+  { metricId: "run_5k", value: 22 * 60 + 45, context: "current", note: "recent" },
+  { metricId: "longest_run", value: 45, context: "historical", note: "lifetime" },
+  { metricId: "undergrad_gpa", value: 3.4, context: "current", note: "test" },
+  { metricId: "undergrad_science_gpa", value: 3.3, context: "current", note: "test" },
+];
 
 export async function testDb(): Promise<LocalDatabase> {
   const db = await LocalDatabase.open();
@@ -20,14 +31,14 @@ export function profileInput(overrides: Partial<ProfileInput> = {}): ProfileInpu
   return {
     display_name: "Test Player",
     date_of_birth: null,
-    age_years: INITIAL_PROFILE.age_years,
+    age_years: 22,
     country: "United States",
-    height_cm: INITIAL_PROFILE.height_cm,
-    weight_kg: INITIAL_PROFILE.weight_kg,
+    height_cm: 180,
+    weight_kg: 75,
     sex: "male",
-    education_level: INITIAL_PROFILE.education_level,
-    occupation: INITIAL_PROFILE.occupation,
-    goals: INITIAL_PROFILE.goals,
+    education_level: "Bachelor's",
+    occupation: "Student",
+    goals: ["Get stronger", "Study consistently"],
     fitness_experience: "Intermediate",
     academic_info: {},
     financial_info: {},
@@ -61,7 +72,7 @@ export async function onboardedPlayer(db: LocalDatabase, clock = testClock(), wi
     type: "complete_onboarding",
     profile: profileInput(),
     unit_system: "imperial",
-    metrics: withInitial ? INITIAL_METRICS.map((m) => ({ metricId: m.metricId, value: m.value, context: m.context, recordedOn: today, note: m.note })) : [],
+    metrics: withInitial ? SAMPLE_METRICS.map((m) => ({ metricId: m.metricId, value: m.value, context: m.context, recordedOn: today, note: m.note })) : [],
   });
   return { userId, game, clock };
 }

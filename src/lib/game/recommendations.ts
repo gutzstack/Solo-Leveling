@@ -33,7 +33,7 @@ export const RECOMMENDED: Record<AttributeCode, QuestRecommendation[]> = {
   ],
   CHA: [
     { title: "Bridge builder", description: "Reach out to a classmate, mentor or friend twice this week.", difficulty: "D", objectives: [{ title: "2 connections", tracker: { type: "activity_count", activities: ["social_connection", "networking"] }, target: 2 }] },
-    { title: "Find your voice", description: "Practice communication deliberately, e.g. a case presentation dry run.", difficulty: "C", objectives: [{ title: "2 communication practices", tracker: { type: "activity_count", activities: ["communication", "public_speaking", "presentation"] }, target: 2 }] },
+    { title: "Find your voice", description: "Practice communication deliberately, e.g. rehearsing a presentation out loud.", difficulty: "C", objectives: [{ title: "2 communication practices", tracker: { type: "activity_count", activities: ["communication", "public_speaking", "presentation"] }, target: 2 }] },
   ],
   WIS: [
     { title: "Still mind", description: "Short daily mindfulness and reflection.", difficulty: "D", objectives: [{ title: "60 minutes of mindfulness", tracker: { type: "activity_minutes", activities: ["mindfulness"] }, target: 60 }, { title: "4 reflections", tracker: { type: "activity_count", activities: ["reflection"] }, target: 4 }] },

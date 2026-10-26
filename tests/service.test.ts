@@ -17,16 +17,16 @@ describe("onboarding", () => {
     const snap = await game.snapshot();
     expect(snap.profile.onboarded_at).not.toBeNull();
     const fiveK = snap.metrics.find((m) => m.id === "run_5k")!;
-    // Current 5K is the recent 21:34, not the historical 19:30 PB.
-    expect(fiveK.current?.value).toBe(21 * 60 + 34);
-    expect(fiveK.personalBest?.value).toBe(19 * 60 + 30);
+    // Current 5K is the recent 22:45, not the historical 20:00 PB.
+    expect(fiveK.current?.value).toBe(22 * 60 + 45);
+    expect(fiveK.personalBest?.value).toBe(20 * 60);
     expect(fiveK.personalBest?.context).toBe("historical");
     const mile = snap.metrics.find((m) => m.id === "mile_time")!;
     expect(mile.current).toBeNull();
     expect(mile.historicalOnly).toBe(true);
     expect(mile.rank).toBeNull();
     expect(snap.achievements.find((a) => a.code === "the_awakening")?.unlocked).toBe(true);
-    // Past marathon-distance run is recognised (31 mi > 42.195 km)
+    // Past marathon-distance run is recognised (45 km > 42.195 km)
     expect(snap.achievements.find((a) => a.code === "longest_run_km_42_195")?.unlocked).toBe(true);
     expect(snap.quests.filter((q) => q.kind === "daily").length).toBeGreaterThanOrEqual(3);
     expect(snap.quests.filter((q) => q.kind === "weekly").length).toBeGreaterThanOrEqual(3);

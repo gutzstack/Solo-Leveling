@@ -15,7 +15,6 @@ import { localDate } from "@/lib/domain/dates";
 import { METRICS, METRIC_BY_ID } from "@/lib/domain/metrics";
 import { ATTRIBUTE_CODES, type AttributeCode, type EntryContext, type UnitKind, type UnitSystem } from "@/lib/domain/types";
 import { cmToFeetInches, displayUnit, feetInchesToCm, formatValue, kgToLb, lbToKg, parseDisplayInput } from "@/lib/domain/units";
-import { INITIAL_METRICS, INITIAL_PROFILE } from "@/lib/game/initial-profile";
 import { cn } from "@/lib/utils";
 
 const LINES = ["[SYSTEM] Scanning…", "Player candidate detected.", "Qualifications confirmed.", "Initializing status window…", "You have been selected."];
@@ -38,14 +37,14 @@ export default function Awakening() {
   const [step, setStep] = useState(0);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Form state (pre-filled with editable suggestions)
+  // Form state: every new player starts from a blank slate
   const [units, setUnits] = useState<UnitSystem>("imperial");
-  const [name, setName] = useState(INITIAL_PROFILE.display_name);
+  const [name, setName] = useState("");
   const [useDob, setUseDob] = useState(false);
   const [dob, setDob] = useState("");
-  const [age, setAge] = useState(String(INITIAL_PROFILE.age_years));
+  const [age, setAge] = useState("");
   const [sex, setSex] = useState<"" | "male" | "female">("");
-  const [country, setCountry] = useState(INITIAL_PROFILE.country);
+  const [country, setCountry] = useState("");
   const [tz, setTz] = useState(() => {
     try {
       return Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York";
@@ -53,30 +52,22 @@ export default function Awakening() {
       return "America/New_York";
     }
   });
-  const fi = cmToFeetInches(INITIAL_PROFILE.height_cm);
-  const [ft, setFt] = useState(String(fi.feet));
-  const [inch, setInch] = useState(String(Math.round(fi.inches)));
-  const [cm, setCm] = useState(String(INITIAL_PROFILE.height_cm));
-  const [weight, setWeight] = useState(String(Math.round(kgToLb(INITIAL_PROFILE.weight_kg))));
-  const [fitness, setFitness] = useState(INITIAL_PROFILE.fitness_experience);
-  const [education, setEducation] = useState(INITIAL_PROFILE.education_level);
-  const [occupation, setOccupation] = useState(INITIAL_PROFILE.occupation);
-  const [program, setProgram] = useState("Physician Assistant (MPAS)");
+  const [ft, setFt] = useState("");
+  const [inch, setInch] = useState("");
+  const [cm, setCm] = useState("");
+  const [weight, setWeight] = useState("");
+  const [fitness, setFitness] = useState("");
+  const [education, setEducation] = useState("");
+  const [occupation, setOccupation] = useState("");
+  const [program, setProgram] = useState("");
   const [year, setYear] = useState("");
   const [examDate, setExamDate] = useState("");
   const [examName, setExamName] = useState("");
-  const [goals, setGoals] = useState(INITIAL_PROFILE.goals.join("\n"));
+  const [goals, setGoals] = useState("");
   const [difficulty, setDifficulty] = useState<"casual" | "normal" | "hard" | "nightmare">("normal");
   const [tracked, setTracked] = useState<AttributeCode[]>([...ATTRIBUTE_CODES]);
   const [efMonths, setEfMonths] = useState("6");
-  const [records, setRecords] = useState<RecordDraft[]>(() =>
-    INITIAL_METRICS.map((m, i) => {
-      const def = METRIC_BY_ID[m.metricId];
-      const u = displayUnit(def.unit, "imperial");
-      const raw = def.unit === "duration" ? formatValue("duration", m.value, "imperial") : String(Math.round(u.toDisplay(m.value) * 100) / 100);
-      return { id: i, metricId: m.metricId, raw, context: m.context, note: m.note };
-    }),
-  );
+  const [records, setRecords] = useState<RecordDraft[]>([]);
   const [addMetric, setAddMetric] = useState("squat_1rm");
 
   useEffect(() => {
@@ -187,7 +178,7 @@ export default function Awakening() {
           display_name: name.trim(),
           date_of_birth: useDob ? dob : null,
           age_years: useDob ? null : Number(age),
-          country: country.trim() || "United States",
+          country: country.trim() || "Not specified",
           height_cm: heightCm(),
           weight_kg: weightKg() ? Math.round((weightKg() as number) * 1000) / 1000 : null,
           sex: sex || null,
@@ -245,7 +236,7 @@ export default function Awakening() {
               {step === 0 && (
                 <>
                   <Field label="Player name" htmlFor="name">
-                    <Input id="name" maxLength={40} value={name} onChange={(e) => setName(e.target.value)} />
+                    <Input id="name" maxLength={40} placeholder="Choose your player name" value={name} onChange={(e) => setName(e.target.value)} />
                   </Field>
                   <div className="flex items-center justify-between gap-3 rounded-lg border border-line/60 p-3">
                     <div>
@@ -272,7 +263,7 @@ export default function Awakening() {
                   </Field>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <Field label="Country" htmlFor="country" hint="Population benchmarks are U.S.-based.">
-                      <Input id="country" value={country} onChange={(e) => setCountry(e.target.value)} />
+                      <Input id="country" placeholder="e.g. United States" value={country} onChange={(e) => setCountry(e.target.value)} />
                     </Field>
                     <Field label="Time zone" htmlFor="tz" hint="Defines when your day starts.">
                       <Input id="tz" value={tz} onChange={(e) => setTz(e.target.value)} />
@@ -309,6 +300,7 @@ export default function Awakening() {
                   </Field>
                   <Field label="Fitness experience" htmlFor="fit">
                     <Select id="fit" value={fitness} onChange={(e) => setFitness(e.target.value)}>
+                      <option value="">Prefer not to say</option>
                       {["Beginner", "Novice", "Intermediate", "Advanced", "Competitive athlete"].map((f) => (
                         <option key={f}>{f}</option>
                       ))}
@@ -321,22 +313,22 @@ export default function Awakening() {
                 <>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <Field label="Education level" htmlFor="edu">
-                      <Input id="edu" value={education} onChange={(e) => setEducation(e.target.value)} />
+                      <Input id="edu" placeholder="e.g. High school, Bachelor's, Graduate" value={education} onChange={(e) => setEducation(e.target.value)} />
                     </Field>
                     <Field label="Occupation / student status" htmlFor="occ">
-                      <Input id="occ" value={occupation} onChange={(e) => setOccupation(e.target.value)} />
+                      <Input id="occ" placeholder="e.g. Student, Engineer" value={occupation} onChange={(e) => setOccupation(e.target.value)} />
                     </Field>
                     <Field label="Program" htmlFor="prog">
-                      <Input id="prog" value={program} onChange={(e) => setProgram(e.target.value)} />
+                      <Input id="prog" placeholder="e.g. Computer Science (optional)" value={program} onChange={(e) => setProgram(e.target.value)} />
                     </Field>
                     <Field label="Year / phase (optional)" htmlFor="year">
-                      <Input id="year" placeholder="Didactic year 1" value={year} onChange={(e) => setYear(e.target.value)} />
+                      <Input id="year" placeholder="e.g. Year 2" value={year} onChange={(e) => setYear(e.target.value)} />
                     </Field>
                     <Field label="Next exam date (optional)" htmlFor="exd" hint="Unlocks exam-prep emergency quests.">
                       <Input id="exd" type="date" min={today} value={examDate} onChange={(e) => setExamDate(e.target.value)} />
                     </Field>
                     <Field label="Next exam name" htmlFor="exn">
-                      <Input id="exn" placeholder="Cardiology block exam" value={examName} onChange={(e) => setExamName(e.target.value)} />
+                      <Input id="exn" placeholder="e.g. Biology midterm" value={examName} onChange={(e) => setExamName(e.target.value)} />
                     </Field>
                   </div>
                   <p className="text-xs text-faint">GPA and exam results are tracked as academic performance, never as IQ.</p>
@@ -346,7 +338,7 @@ export default function Awakening() {
               {step === 3 && (
                 <>
                   <Field label="Personal goals (one per line)" htmlFor="goals">
-                    <Textarea id="goals" rows={5} value={goals} onChange={(e) => setGoals(e.target.value)} />
+                    <Textarea id="goals" rows={5} placeholder={"e.g. Run a faster 5K\nRaise my exam average\nSave an emergency fund"} value={goals} onChange={(e) => setGoals(e.target.value)} />
                   </Field>
                   <Field label="Difficulty" htmlFor="diff" hint="Scales daily and weekly quest targets. Never punishes missed days.">
                     <Select id="diff" value={difficulty} onChange={(e) => setDifficulty(e.target.value as typeof difficulty)}>
@@ -382,7 +374,7 @@ export default function Awakening() {
 
               {step === 4 && (
                 <>
-                  <p className="text-sm text-dim">Existing records. These are editable suggestions; anything you don&apos;t know stays blank. Mark past bests as <b>historical</b> so they aren&apos;t treated as current ability.</p>
+                  <p className="text-sm text-dim">Optional: add any personal records you already have, or skip this and log them later. Mark past bests as <b>historical</b> so they aren&apos;t treated as current ability.</p>
                   <ul className="space-y-2">
                     {records.map((r) => {
                       const def = METRIC_BY_ID[r.metricId];
@@ -429,14 +421,13 @@ export default function Awakening() {
                 <div className="space-y-2 text-sm">
                   <p className="font-display text-[10px] tracking-[0.25em] text-accent">[CONFIRM PLAYER DATA]</p>
                   <p>
-                    <span className="text-dim">Player:</span> {name} · {useDob ? `born ${dob}` : `age ${age}`}
-                    {sex ? ` · ${sex}` : ""} · {country}
+                    <span className="text-dim">Player:</span> {[name, useDob ? (dob ? `born ${dob}` : "") : age ? `age ${age}` : "", sex, country.trim()].filter(Boolean).join(" · ")}
                   </p>
                   <p>
-                    <span className="text-dim">Body:</span> {heightCm() ? formatValue("length", heightCm(), "metric") : "—"} · {weightKg() ? formatValue("mass", weightKg(), units) : "—"}
+                    <span className="text-dim">Body:</span> {[heightCm() ? formatValue("length", heightCm(), units) : "", weightKg() ? formatValue("mass", weightKg(), units) : ""].filter(Boolean).join(" · ") || "not provided"}
                   </p>
                   <p>
-                    <span className="text-dim">Path:</span> {occupation} · {program}
+                    <span className="text-dim">Path:</span> {[education.trim(), occupation.trim(), program.trim()].filter(Boolean).join(" · ") || "not provided"}
                   </p>
                   <p>
                     <span className="text-dim">Tracking:</span> {tracked.join(" · ")} · difficulty {difficulty}

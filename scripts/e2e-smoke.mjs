@@ -38,6 +38,7 @@ try {
   await step("awakening onboarding", async () => {
     await page.getByText("Tap to skip").click();
     await page.getByLabel("Player name").fill("Shadow");
+    await page.getByLabel("Age").fill("24");
     await page.getByLabel("Sex (optional)").selectOption("male");
     for (let i = 0; i < 5; i++) await page.getByRole("button", { name: "Next", exact: true }).click();
     await page.screenshot({ path: `${OUT}/01-confirm.png` });

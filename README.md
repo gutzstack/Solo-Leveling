@@ -20,10 +20,9 @@ migration and row-level-security policies* as Supabase, plus email/password auth
 scrypt-hashed passwords and HMAC-signed session cookies.
 
 1. Open the app, press **Accept** and create an account.
-2. The **Awakening** sequence walks through onboarding, pre-filled with editable starting
-   values (age 21, 5'9", 145 lb, PA student, bench 205 lb, mile 5:40 *historical*, 5K 19:30
-   *historical*, recent 5K 21:34, longest run 31 mi *historical*, GPA 3.68 / science 3.50).
-   Anything not provided stays blank.
+2. The **Awakening** sequence walks through onboarding. Every player starts from a blank slate:
+   name, age (or date of birth), body measures, education, goals and existing records are all
+   optional inputs except name and age, and anything you skip stays blank.
 3. You land on **STATUS**. Log activities and measurements, run dungeons, complete quests.
 
 ```bash
@@ -188,6 +187,6 @@ lock). Serverless platforms need the Supabase backend instead.
 * Third-party integrations (Apple Health, Strava, Google Calendar, LMS) are not implemented.
 * Deleting an activity (STATUS → Recent Activity → Full log) reverses its XP but not quests or
   achievements it already completed (achievements are permanent once earned).
-* Main story arcs use fixed milestone targets (e.g. sub-18 5K, +10 lb lean mass). Edit
+* Main story arcs use fixed milestone targets (e.g. sub-20 5K, +10 lb lean mass). Edit
   `src/lib/game/quest-templates.ts` to change them; there's no in-app arc editor yet.
 * No push notifications; reminders appear in-app.

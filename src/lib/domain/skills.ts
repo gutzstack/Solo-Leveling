@@ -46,8 +46,8 @@ const LINES: LineSpec[] = [
   // Academic
   { tree: "academic", line: "active_recall", name: "Active Recall", stat: "flashcards_total", op: "gte", values: [100, 500, 1500, 4000, 10000], label: (v) => `Review ${v.toLocaleString()} flashcards`, effect: "Retrieval practice strengthens memory more than rereading." },
   { tree: "academic", line: "spaced_repetition", name: "Spaced Repetition", stat: "flashcard_days", op: "gte", values: [3, 10, 30, 60, 120], label: (v) => `Review flashcards on ${v} different days`, effect: "Spacing reviews out over time beats cramming." },
-  { tree: "academic", line: "clinical_reasoning", name: "Clinical Reasoning", stat: "clinical_practice_total", op: "gte", values: [3, 10, 25, 50, 100], label: (v) => `Complete ${v} quiz / practice-exam blocks`, effect: "Case-based questions train illness scripts." },
-  { tree: "academic", line: "diagnostic_knowledge", name: "Diagnostic Knowledge", stat: "study_hours_total", op: "gte", values: [10, 50, 150, 300, 600], label: (v) => `Log ${v} focused study hours`, effect: "Depth of knowledge accumulates hour by hour." },
+  { tree: "academic", line: "clinical_reasoning", name: "Applied Reasoning", stat: "clinical_practice_total", op: "gte", values: [3, 10, 25, 50, 100], label: (v) => `Complete ${v} quiz / practice-exam blocks`, effect: "Working problems and practice questions turns facts into usable knowledge." },
+  { tree: "academic", line: "diagnostic_knowledge", name: "Deep Knowledge", stat: "study_hours_total", op: "gte", values: [10, 50, 150, 300, 600], label: (v) => `Log ${v} focused study hours`, effect: "Depth of knowledge accumulates hour by hour." },
   { tree: "academic", line: "examination_mastery", name: "Examination Mastery", stat: "practice_exams_and_bosses", op: "gte", values: [1, 3, 6, 10, 15], label: (v) => `Clear ${v} practice exams or boss dungeons`, effect: "Full-length rehearsal builds stamina and pacing." },
   // Physical
   { tree: "physical", line: "strength_foundation", name: "Strength Foundation", stat: "workouts_total", op: "gte", values: [5, 20, 50, 100, 200], label: (v) => `Complete ${v} strength workouts`, effect: "Consistent lifting builds the base for everything else." },
@@ -81,7 +81,7 @@ export const SKILLS: SkillDef[] = LINES.flatMap((l) =>
 export const SKILL_BY_CODE: Record<string, SkillDef> = Object.fromEntries(SKILLS.map((s) => [s.code, s]));
 
 export const SKILL_TREES: { tree: SkillTree; name: string; description: string }[] = [
-  { tree: "academic", name: "Academic Tree", description: "Mastery of learning, clinical reasoning and examinations." },
+  { tree: "academic", name: "Academic Tree", description: "Mastery of learning, reasoning and examinations." },
   { tree: "physical", name: "Physical Tree", description: "Strength, endurance, speed and mobility." },
   { tree: "discipline", name: "Discipline Tree", description: "Consistency, focus and self-direction." },
 ];

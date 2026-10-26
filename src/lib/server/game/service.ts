@@ -20,6 +20,9 @@ import { UniqueViolationError, type Database, type DataClient } from "../db/type
 import { applyPenalty, penaltiesEnabled } from "./penalty";
 import { buildSnapshot, type PlayerSnapshot } from "./snapshot";
 
+/** Regimen quests created before this were generated with the original 100/100/100/5 km defaults. */
+const LIGHTER_REGIMEN_SHIPPED = "2026-10-27T06:00:00.000Z";
+
 export class GameError extends Error {
   constructor(
     message: string,
@@ -280,14 +283,15 @@ export class GameService {
       await this.notify("penalty", "[PENALTY]", body);
     }
 
-    // One-time: boards issued with the original 100/100/100/5 km defaults move to the new starting
-    // regimen for players who never customised it.
-    if (penal && Object.keys(data.settings.regimen ?? {}).length === 0) {
-      const old = data.quests.find((q) => q.template_code === "daily_regimen" && q.period_start === data.today && q.status === "active");
+    // One-time: a regimen quest issued before the lighter starting regimen shipped, still on the
+    // original 100/100/100/5 km defaults, moves to the player's current (lower) targets.
+    {
+      const old = data.quests.find((q) => q.template_code === "daily_regimen" && q.period_start === data.today && q.status === "active" && q.created_at < LIGHTER_REGIMEN_SHIPPED);
       const objs = old ? data.objectives.filter((o) => o.quest_id === old.id).sort((a, b) => a.sort_order - b.sort_order) : [];
-      if (old && objs.map((o) => o.target).join() === "100,100,100,5" && !objs.some((o) => o.completed_at)) {
+      if (old && objs.map((o) => o.target).join() === "100,100,100,5") {
         const fresh = generateDailyQuests(p, data.today, cfg, this.userId, regimen, units).find((d) => d.template_code === "daily_regimen");
-        if (fresh) for (const [i, o] of objs.entries()) if (fresh.objectives[i]) await this.svc.update("quest_objectives", { id: o.id, user_id: this.userId }, { target: fresh.objectives[i].target, title: fresh.objectives[i].title });
+        if (fresh && fresh.objectives.length === objs.length && fresh.objectives.every((f, i) => f.target <= objs[i].target))
+          for (const [i, o] of objs.entries()) await this.svc.update("quest_objectives", { id: o.id, user_id: this.userId }, { target: fresh.objectives[i].target, title: fresh.objectives[i].title, completed_at: null });
       }
     }
 
@@ -467,7 +471,7 @@ export class GameService {
     const events: GameEvent[] = [];
     const { data: d2, ev } = await this.progress(events);
     data = d2;
-    return buildSnapshot(data, ev, this.db.kind);
+    return buildSnapshot(data, ev, this.db.kind, await penaltiesEnabled(this.db));
   }
 
   async execute(raw: unknown): Promise<{ events: GameEvent[]; snapshot: PlayerSnapshot }> {
@@ -647,7 +651,7 @@ export class GameService {
     const { data: after, ev } = await this.progress(events);
     this.diffEvents(before, ev, events, focusMetric);
     await this.cacheLevel(ev);
-    return { events, snapshot: buildSnapshot(after, ev, this.db.kind) };
+    return { events, snapshot: buildSnapshot(after, ev, this.db.kind, await penaltiesEnabled(this.db)) };
   }
 
   // ───────────────────────────── Import / export ─────────────────────────────

@@ -43,6 +43,12 @@ export default function QuestsPage() {
           </Button>
         </CustomQuestDialog>
       </PageHeader>
+      {!data.penaltiesEnabled ? (
+        <div className="mb-4 rounded-xl border border-amber-400/60 bg-amber-950/30 px-4 py-3 text-sm text-fg light:bg-amber-50">
+          <p className="font-display text-[10px] tracking-[0.25em] text-amber-300 light:text-amber-800">[PENALTIES OFFLINE]</p>
+          Penalties, rest-day passes and regimen changes need the database update <code>supabase/migrations/0003_regimen_penalties.sql</code>. Run it once in the Supabase SQL Editor.
+        </div>
+      ) : null}
       {zone ? <PenaltyBanner q={zone} /> : null}
       <Tabs defaultValue="daily">
         <TabsList className="mb-4">

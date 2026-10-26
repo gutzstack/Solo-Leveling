@@ -10,6 +10,8 @@ import type { XpConfig } from "../../domain/xp";
 
 export interface PlayerSnapshot {
   backend: "local" | "supabase";
+  /** false until database migration 0003 is applied */
+  penaltiesEnabled: boolean;
   today: string;
   serverTime: string;
   profile: ProfileRow;
@@ -40,7 +42,7 @@ export interface PlayerSnapshot {
   trials: TrialResultRow[];
 }
 
-export function buildSnapshot(data: GameData, ev: Evaluation, backend: "local" | "supabase"): PlayerSnapshot {
+export function buildSnapshot(data: GameData, ev: Evaluation, backend: "local" | "supabase", penaltiesEnabled = true): PlayerSnapshot {
   const reversed = new Set(data.xp.filter((x) => x.reverses_id).map((x) => x.reverses_id));
   const titles = data.titleUnlocks
     .map((t) => (TITLE_BY_CODE[t.title_code] ? { ...TITLE_BY_CODE[t.title_code], unlockedAt: t.unlocked_at, source: t.source } : null))
@@ -49,6 +51,7 @@ export function buildSnapshot(data: GameData, ev: Evaluation, backend: "local" |
   const cutoff = new Date(data.now.getTime() - 120 * 86_400_000).toISOString().slice(0, 10);
   return {
     backend,
+    penaltiesEnabled,
     today: data.today,
     serverTime: data.now.toISOString(),
     profile: data.profile,

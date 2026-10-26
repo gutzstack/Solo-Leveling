@@ -39,6 +39,16 @@ describe("daily quest categories and the training regimen", () => {
     expect(regimen.status).toBe("completed");
   });
 
+  it("moves a regimen quest still on the old 100/100/100/5 km defaults to the lighter targets", async () => {
+    const { game } = await onboardedPlayer(db, testClock());
+    const q = (await game.snapshot()).quests.find((x) => x.template_code === "daily_regimen")!;
+    await db.raw("update public.quests set created_at = '2026-10-20T04:00:00Z' where id = $1", [q.id]);
+    for (const [i, t] of [100, 100, 100, 5].entries()) await db.raw("update public.quest_objectives set target = $1 where quest_id = $2 and sort_order = $3", [t, q.id, i]);
+    await game.execute({ type: "update_settings", settings: { regimen: { pushups: 35 } } });
+    const after = (await game.snapshot()).quests.find((x) => x.id === q.id)!;
+    expect(after.objectives.map((o) => o.target)).toEqual([35, 35, 35, 2.41]);
+  });
+
   it("deleting a log re-opens the quest it completed and takes back the XP", async () => {
     const { game } = await onboardedPlayer(db, testClock());
     for (const a of ["pushups", "situps", "pullups"]) await reps(game, a, 35, "2026-10-20");

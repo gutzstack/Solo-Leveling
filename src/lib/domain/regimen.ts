@@ -19,19 +19,38 @@ export const CATEGORY_INFO: Record<QuestCategory, { name: string; blurb: string 
 };
 
 const reps = (d: number) => z.number().int().min(0).max(1000).default(d);
+const km = (d: number) => z.number().min(0).max(50).default(d);
+
+/** 1.5 miles, rounded to 10 m. */
+export const START_RUN_KM = 2.41;
+
+export const ProgressionSchema = z.object({
+  /** Re-evaluated every Monday from the previous week's regimen days. */
+  enabled: z.boolean().default(true),
+  repStep: z.number().int().min(0).max(50).default(5),
+  pullupStep: z.number().int().min(0).max(50).default(3),
+  /** ≈ 0.25 mi */
+  runStepKm: z.number().min(0).max(5).default(0.4),
+  /** training days you may miss in a week and still level up */
+  allowedMisses: z.number().int().min(0).max(5).default(1),
+  goal: z.object({ pushups: reps(100), situps: reps(100), pullups: reps(100), runKm: km(5) }).prefault({}),
+});
 
 export const RegimenSchema = z.object({
-  categories: z
-    .object({ physical: z.boolean().default(true), intellectual: z.boolean().default(true), mental: z.boolean().default(true), health: z.boolean().default(true), social: z.boolean().default(true) })
-    .default({ physical: true, intellectual: true, mental: true, health: true, social: true }),
-  pushups: reps(100),
-  situps: reps(100),
-  pullups: reps(100),
-  runKm: z.number().min(0).max(50).default(5),
+  categories: z.object({ physical: z.boolean().default(true), intellectual: z.boolean().default(true), mental: z.boolean().default(true), health: z.boolean().default(true), social: z.boolean().default(true) }).prefault({}),
+  pushups: reps(35),
+  situps: reps(35),
+  pullups: reps(35),
+  runKm: km(START_RUN_KM),
+  /** ISO weekdays (1 = Monday … 7 = Sunday) with no training regimen, only a recovery quest. */
+  restDays: z.array(z.number().int().min(1).max(7)).max(4).default([3, 7]),
+  progression: ProgressionSchema.prefault({}),
+  /** week (Monday) the progression was last applied for */
+  progressedWeek: z.string().nullable().default(null),
   /** null = scale 90 minutes by difficulty */
   studyMinutes: z.number().int().min(0).max(600).nullable().default(null),
   dailyTrial: z.boolean().default(true),
-  /** Recovery passes waive one day's physical quests (illness, injury, planned rest). */
+  /** Recovery passes waive one day's physical quests (illness, injury). */
   recoveryPassesPerWeek: z.number().int().min(0).max(2).default(1),
 });
 export type Regimen = z.infer<typeof RegimenSchema>;
@@ -41,6 +60,39 @@ export const DEFAULT_REGIMEN: Regimen = RegimenSchema.parse({});
 export function resolveRegimen(raw: unknown): Regimen {
   const parsed = RegimenSchema.safeParse(raw ?? {});
   return parsed.success ? parsed.data : DEFAULT_REGIMEN;
+}
+
+export const WEEKDAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
+
+export type ProgressionChange = "up" | "down" | "hold";
+
+/**
+ * Weekly auto-progression. `trained` = regimen days issued last week (rest days and recovery
+ * passes excluded), `cleared` = how many of them were completed.
+ *  - miss at most `allowedMisses` → every target rises one step, capped at the goal;
+ *  - clear fewer than half → targets drop one step (never below 10 reps / 1 km);
+ *  - otherwise hold. Fewer than 3 training days (a new player, a short week) always holds.
+ */
+export function progressRegimen(r: Regimen, cleared: number, trained: number): { next: Regimen; change: ProgressionChange } {
+  const pr = r.progression;
+  if (!pr.enabled || trained < 3) return { next: r, change: "hold" };
+  const change: ProgressionChange = cleared >= trained - pr.allowedMisses ? "up" : cleared < trained / 2 ? "down" : "hold";
+  if (change === "hold") return { next: r, change };
+  const move = (cur: number, step: number, goal: number, floor: number) => {
+    if (cur <= 0) return cur;
+    if (change === "up") return cur >= goal ? cur : Math.min(goal, cur + step);
+    return Math.max(Math.min(floor, cur), cur - step);
+  };
+  const round = (x: number) => Math.round(x * 100) / 100;
+  const next: Regimen = {
+    ...r,
+    pushups: move(r.pushups, pr.repStep, pr.goal.pushups, 10),
+    situps: move(r.situps, pr.repStep, pr.goal.situps, 10),
+    pullups: move(r.pullups, pr.pullupStep, pr.goal.pullups, 10),
+    runKm: round(move(r.runKm, pr.runStepKm, pr.goal.runKm, 1)),
+  };
+  const same = next.pushups === r.pushups && next.situps === r.situps && next.pullups === r.pullups && next.runKm === r.runKm;
+  return { next, change: same ? "hold" : change };
 }
 
 // ─────────────────────────────── Penalties ───────────────────────────────

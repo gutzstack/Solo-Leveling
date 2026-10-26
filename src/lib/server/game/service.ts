@@ -4,7 +4,7 @@ import { ATTRIBUTE_BY_CODE } from "../../domain/attributes";
 import { addDays, daysBetween, localDate, weekStart, type ISODate } from "../../domain/dates";
 import { activeSecondsNow, canClear, creditedMinutes, DUNGEON_BY_CODE, DUNGEON_CLEAR_XP, DUNGEON_DAILY_BONUS_CAP, RETREAT_CREDIT_MINUTES } from "../../domain/dungeons";
 import { METRIC_BY_ID, type MetricDef } from "../../domain/metrics";
-import { DUNGEON_RETREAT_PENALTY, flatPenalty, MAX_BACKFILL_DAYS, PENALTY_ZONE_FAIL_FACTOR, questPenalty, resolveRegimen } from "../../domain/regimen";
+import { DUNGEON_RETREAT_PENALTY, flatPenalty, MAX_BACKFILL_DAYS, PENALTY_ZONE_FAIL_FACTOR, progressRegimen, questPenalty, resolveRegimen } from "../../domain/regimen";
 import { compareRanks } from "../../domain/ranks";
 import { TITLE_BY_CODE } from "../../domain/titles";
 import type { AttributeCode, Rank } from "../../domain/types";
@@ -13,7 +13,7 @@ import { CommandSchema, ImportSchema, type Command, type GameEvent } from "../..
 import { evaluate, planAwards, type Evaluation } from "../../game/evaluate";
 import { customMetricDef } from "../../game/metric-state";
 import { objectiveProgress } from "../../game/quest-progress";
-import { generateDailyQuests, generateEmergencyQuests, generateWeeklyQuests, mainQuestDrafts, penaltyZoneDraft, type QuestDraft } from "../../game/quest-templates";
+import { formatRunDistance, generateDailyQuests, generateEmergencyQuests, generateWeeklyQuests, mainQuestDrafts, penaltyZoneDraft, type QuestDraft } from "../../game/quest-templates";
 import { computeStats } from "../../game/stats";
 import type { ActivityRow, CustomMetricRow, DungeonSessionRow, GameData, MetricEntryRow, ObjectiveRow, ProfileRow, QuestRow, SettingsRow, TrialResultRow } from "../../game/rows";
 import { UniqueViolationError, type Database, type DataClient } from "../db/types";
@@ -219,7 +219,8 @@ export class GameService {
   async ensureQuests(data: GameData, events: GameEvent[] = []): Promise<number> {
     if (!data.profile.onboarded_at) return 0;
     const cfg = resolveXpConfig(data.settings.xp_config);
-    const regimen = resolveRegimen(data.settings.regimen);
+    let regimen = resolveRegimen(data.settings.regimen);
+    const units = data.settings.unit_system;
     const p = data.profile;
     const penal = await penaltiesEnabled(this.db);
     const mark = (ds: QuestDraft[]) => (penal ? ds.map((d) => (d.kind === "main" ? d : { ...d, config: { ...d.config, penalized: true, penaltyXp: d.config.penaltyXp ?? questPenalty(d.xp_reward, p.difficulty) } })) : ds);
@@ -233,7 +234,7 @@ export class GameService {
       const last = data.quests.filter((q) => q.kind === "daily" && q.config?.penalized && q.period_start < data.today).reduce<ISODate | null>((m, q) => (!m || q.period_start > m ? q.period_start : m), null);
       if (last) {
         const from = addDays(data.today, -MAX_BACKFILL_DAYS) > addDays(last, 1) ? addDays(data.today, -MAX_BACKFILL_DAYS) : addDays(last, 1);
-        for (let d = from; d < data.today; d = addDays(d, 1)) created += await this.insertQuestDrafts(mark(missing(generateDailyQuests(p, d, cfg, this.userId, regimen))), baseline());
+        for (let d = from; d < data.today; d = addDays(d, 1)) created += await this.insertQuestDrafts(mark(missing(generateDailyQuests(p, d, cfg, this.userId, regimen, units))), baseline());
         if (created) {
           data = await this.load();
           have = new Set(data.quests.map((q) => `${q.template_code}|${q.period_start}`));
@@ -279,8 +280,35 @@ export class GameService {
       await this.notify("penalty", "[PENALTY]", body);
     }
 
+    // One-time: boards issued with the original 100/100/100/5 km defaults move to the new starting
+    // regimen for players who never customised it.
+    if (penal && Object.keys(data.settings.regimen ?? {}).length === 0) {
+      const old = data.quests.find((q) => q.template_code === "daily_regimen" && q.period_start === data.today && q.status === "active");
+      const objs = old ? data.objectives.filter((o) => o.quest_id === old.id).sort((a, b) => a.sort_order - b.sort_order) : [];
+      if (old && objs.map((o) => o.target).join() === "100,100,100,5" && !objs.some((o) => o.completed_at)) {
+        const fresh = generateDailyQuests(p, data.today, cfg, this.userId, regimen, units).find((d) => d.template_code === "daily_regimen");
+        if (fresh) for (const [i, o] of objs.entries()) if (fresh.objectives[i]) await this.svc.update("quest_objectives", { id: o.id, user_id: this.userId }, { target: fresh.objectives[i].target, title: fresh.objectives[i].title });
+      }
+    }
+
+    // Weekly progression of the training regimen, judged on last week's training days.
+    const ws = weekStart(data.today);
+    if (penal && regimen.progressedWeek !== ws) {
+      const last = data.quests.filter((q) => q.template_code === "daily_regimen" && q.period_start >= addDays(ws, -7) && q.period_start < ws && q.status !== "exempt");
+      const cleared = last.filter((q) => q.status === "completed").length;
+      const { next, change } = progressRegimen(regimen, cleared, last.length);
+      regimen = { ...next, progressedWeek: ws };
+      await this.svc.update("settings", { user_id: this.userId }, { regimen });
+      if (change !== "hold") {
+        const parts = [regimen.pushups && `${regimen.pushups} push-ups`, regimen.situps && `${regimen.situps} sit-ups`, regimen.pullups && `${regimen.pullups} pull-ups`, regimen.runKm && `a ${formatRunDistance(regimen.runKm, units)} run`].filter(Boolean).join(", ");
+        const body = change === "up" ? `You cleared ${cleared} of ${last.length} training days. This week's regimen: ${parts}.` : `You cleared only ${cleared} of ${last.length} training days. The regimen steps back to ${parts}.`;
+        events.push({ type: "info", title: change === "up" ? "Training level up" : "Training scaled back", body });
+        await this.notify("quest", change === "up" ? "[TRAINING LEVEL UP]" : "[TRAINING ADJUSTED]", body);
+      }
+    }
+
     // Today's board
-    const todays = mark(generateDailyQuests(p, data.today, cfg, this.userId, regimen));
+    const todays = mark(generateDailyQuests(p, data.today, cfg, this.userId, regimen, units));
     const dailies = missing(todays);
     created += await this.insertQuestDrafts(dailies, baseline());
     created += await this.insertQuestDrafts(mark(missing(generateWeeklyQuests(p, data.today, cfg))), baseline());

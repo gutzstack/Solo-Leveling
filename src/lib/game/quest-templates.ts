@@ -1,8 +1,8 @@
-import { addDays, weekStart, type ISODate } from "../domain/dates";
+import { addDays, isoWeekday, weekStart, type ISODate } from "../domain/dates";
 import { DEFAULT_REGIMEN, type QUEST_CATEGORIES, type QuestCategory, type Regimen } from "../domain/regimen";
 import { lbToKg } from "../domain/units";
 import type { XpConfig } from "../domain/xp";
-import type { AttributeCode } from "../domain/types";
+import type { AttributeCode, UnitSystem } from "../domain/types";
 import type { ProfileRow, QuestKind, QuestRow, Tracker } from "./rows";
 
 export interface ObjectiveDraft {
@@ -71,21 +71,25 @@ function daily(date: ISODate, cfg: XpConfig, category: QuestCategory, code: stri
   };
 }
 
-const fmtKm = (km: number) => `${Math.round(km * 100) / 100} km (${Math.round((km / 1.609344) * 10) / 10} mi)`;
+export function formatRunDistance(km: number, units: UnitSystem): string {
+  return units === "imperial" ? `${Math.round((km / 1.609344) * 100) / 100} mi` : `${Math.round(km * 100) / 100} km`;
+}
 
 /** Daily quest board: one or more quests per enabled category, built from the player's regimen. */
-export function generateDailyQuests(p: ProfileRow, date: ISODate, cfg: XpConfig, _userId: string, r: Regimen = DEFAULT_REGIMEN): QuestDraft[] {
+export function generateDailyQuests(p: ProfileRow, date: ISODate, cfg: XpConfig, _userId: string, r: Regimen = DEFAULT_REGIMEN, units: UnitSystem = "metric"): QuestDraft[] {
   const out: QuestDraft[] = [];
 
-  if (categoryEnabled(p, r, "physical")) {
+  if (categoryEnabled(p, r, "physical") && r.restDays.includes(isoWeekday(date))) {
+    out.push(daily(date, cfg, "physical", "daily_rest", "Scheduled rest day", "No training regimen today. Muscles grow during recovery: log a rest day, a mobility session or an easy walk.", "PHY", [{ title: "Rest, mobility or an easy walk", tracker: { type: "activity_count", activities: ["rest_day", "mobility", "walk"] }, target: 1 }], { habit: true, difficulty: "E" }));
+  } else if (categoryEnabled(p, r, "physical")) {
     const objs: ObjectiveDraft[] = [];
     if (r.pushups > 0) objs.push({ title: `${r.pushups} push-ups`, tracker: { type: "activity_quantity", activities: ["pushups"] }, target: r.pushups });
     if (r.situps > 0) objs.push({ title: `${r.situps} sit-ups`, tracker: { type: "activity_quantity", activities: ["situps"] }, target: r.situps });
     if (r.pullups > 0) objs.push({ title: `${r.pullups} pull-ups`, tracker: { type: "activity_quantity", activities: ["pullups"] }, target: r.pullups });
-    if (r.runKm > 0) objs.push({ title: `Run ${fmtKm(r.runKm)}`, tracker: { type: "activity_quantity", activities: ["run"] }, target: Math.round(r.runKm * 100) / 100 });
+    if (r.runKm > 0) objs.push({ title: `Run ${formatRunDistance(r.runKm, units)}`, tracker: { type: "activity_quantity", activities: ["run"] }, target: Math.round(r.runKm * 100) / 100 });
     if (objs.length)
       out.push(
-        daily(date, cfg, "physical", "daily_regimen", "PREPARATIONS TO BECOME POWERFUL", "The daily training regimen. Log reps in as many sets as you like. Failing to complete it opens the Penalty Zone.", "STR", objs, {
+        daily(date, cfg, "physical", "daily_regimen", "PREPARATIONS TO BECOME POWERFUL", "The daily training regimen. Log reps in as many sets as you like. Clear it on every training day but one and next week's targets rise; failing it opens the Penalty Zone.", "STR", objs, {
           xp: cfg.dailyQuest * objs.length,
           difficulty: "C",
         }),

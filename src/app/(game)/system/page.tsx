@@ -13,7 +13,7 @@ import { pushInfo } from "@/lib/client/events";
 import { SNAPSHOT_KEY, useCommand, useSnapshot } from "@/lib/client/use-game";
 import { ACTIVITIES } from "@/lib/domain/activities";
 import { ATTRIBUTES } from "@/lib/domain/attributes";
-import { CATEGORY_INFO, PENALTY_MULTIPLIER, QUEST_CATEGORIES, questPenalty, resolveRegimen, type Regimen } from "@/lib/domain/regimen";
+import { CATEGORY_INFO, PENALTY_MULTIPLIER, QUEST_CATEGORIES, questPenalty, resolveRegimen, WEEKDAY_NAMES, type Regimen } from "@/lib/domain/regimen";
 import { ATTRIBUTE_CODES, type AttributeCode } from "@/lib/domain/types";
 import { cmToFeetInches, feetInchesToCm, kgToLb, lbToKg } from "@/lib/domain/units";
 import { totalXpForLevel, xpToNextLevel } from "@/lib/domain/xp";
@@ -249,11 +249,26 @@ function RegimenForm({ s }: { s: PlayerSnapshot }) {
   const cmd = useCommand({ silent: true });
   const [r, setR] = useState<Regimen>(() => resolveRegimen(s.settings.regimen));
   const [saved, setSaved] = useState(false);
-  const num = (k: "pushups" | "situps" | "pullups" | "runKm", label: string, step = 1) => (
+  const imperial = s.settings.unit_system === "imperial";
+  const unit = imperial ? "mi" : "km";
+  const toDisp = (km: number) => Math.round((imperial ? km / 1.609344 : km) * 100) / 100;
+  const fromDisp = (v: number) => Math.round((imperial ? v * 1.609344 : v) * 100) / 100;
+  const num = (k: "pushups" | "situps" | "pullups", label: string) => (
     <Field label={label} htmlFor={`rg-${k}`}>
-      <Input id={`rg-${k}`} type="number" min={0} max={k === "runKm" ? 50 : 1000} step={step} value={r[k]} onChange={(e) => setR((x) => ({ ...x, [k]: Math.max(0, Number(e.target.value)) }))} />
+      <Input id={`rg-${k}`} type="number" min={0} max={1000} value={r[k]} onChange={(e) => setR((x) => ({ ...x, [k]: Math.max(0, Math.round(Number(e.target.value))) }))} />
     </Field>
   );
+  const pr = r.progression;
+  const setPr = (patch: Partial<Regimen["progression"]>) => setR((x) => ({ ...x, progression: { ...x.progression, ...patch } }));
+  const setGoal = (patch: Partial<Regimen["progression"]["goal"]>) => setPr({ goal: { ...pr.goal, ...patch } });
+  // This week so far, judged the way Monday's progression will judge it.
+  const ws = (() => {
+    const d = new Date(`${s.today}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+    return d.toISOString().slice(0, 10);
+  })();
+  const week = s.quests.filter((q) => q.template_code === "daily_regimen" && q.period_start >= ws && q.status !== "exempt");
+  const trainingDays = 7 - r.restDays.length;
   const mult = PENALTY_MULTIPLIER[s.profile.difficulty];
   const physicalObjectives = [r.pushups, r.situps, r.pullups, r.runKm].filter((v) => v > 0).length;
   return (
@@ -272,9 +287,61 @@ function RegimenForm({ s }: { s: PlayerSnapshot }) {
             {num("pushups", "Push-ups")}
             {num("situps", "Sit-ups")}
             {num("pullups", "Pull-ups")}
-            {num("runKm", "Run (km)", 0.5)}
+            <Field label={`Run (${unit})`} htmlFor="rg-run">
+              <Input id="rg-run" type="number" min={0} step={0.05} value={toDisp(r.runKm)} onChange={(e) => setR((x) => ({ ...x, runKm: Math.max(0, fromDisp(Number(e.target.value))) }))} />
+            </Field>
           </div>
-          <p className="text-xs text-faint">Set any target to 0 to drop it. Log reps in as many sets as you like from the quest card.</p>
+          <p className="text-xs text-faint">Today&apos;s targets. Set any to 0 to drop it. Log reps in as many sets as you like from the quest card.</p>
+          <Field label="Rest days" hint="No training regimen on these days, just a recovery quest (rest, mobility or an easy walk).">
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {WEEKDAY_NAMES.map((name, i) => {
+                const day = i + 1;
+                const on = r.restDays.includes(day);
+                return (
+                  <Button key={name} type="button" size="sm" variant={on ? "default" : "outline"} aria-pressed={on} disabled={!on && r.restDays.length >= 4} onClick={() => setR((x) => ({ ...x, restDays: on ? x.restDays.filter((d) => d !== day) : [...x.restDays, day].sort() }))}>
+                    {name}
+                  </Button>
+                );
+              })}
+            </div>
+          </Field>
+          <p className="font-display text-[10px] tracking-[0.18em] text-dim">WEEKLY PROGRESSION</p>
+          <Toggle label="Scale up automatically" hint={`Every Monday: clear the regimen on all but ${pr.allowedMisses} of last week's training days and every target rises one step; clear fewer than half and it steps back. Stops at the goal.`} checked={pr.enabled} onChange={(v) => setPr({ enabled: v })} />
+          {pr.enabled ? (
+            <>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <Field label="Push-up/sit-up step" htmlFor="pg-rep">
+                  <Input id="pg-rep" type="number" min={0} max={50} value={pr.repStep} onChange={(e) => setPr({ repStep: Math.max(0, Math.round(Number(e.target.value))) })} />
+                </Field>
+                <Field label="Pull-up step" htmlFor="pg-pull">
+                  <Input id="pg-pull" type="number" min={0} max={50} value={pr.pullupStep} onChange={(e) => setPr({ pullupStep: Math.max(0, Math.round(Number(e.target.value))) })} />
+                </Field>
+                <Field label={`Run step (${unit})`} htmlFor="pg-run">
+                  <Input id="pg-run" type="number" min={0} step={0.05} value={toDisp(pr.runStepKm)} onChange={(e) => setPr({ runStepKm: Math.max(0, fromDisp(Number(e.target.value))) })} />
+                </Field>
+                <Field label="Misses allowed" htmlFor="pg-miss">
+                  <Input id="pg-miss" type="number" min={0} max={5} value={pr.allowedMisses} onChange={(e) => setPr({ allowedMisses: Math.max(0, Math.round(Number(e.target.value))) })} />
+                </Field>
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <Field label="Goal: push-ups" htmlFor="pg-gpu">
+                  <Input id="pg-gpu" type="number" min={0} max={1000} value={pr.goal.pushups} onChange={(e) => setGoal({ pushups: Math.max(0, Math.round(Number(e.target.value))) })} />
+                </Field>
+                <Field label="Goal: sit-ups" htmlFor="pg-gsu">
+                  <Input id="pg-gsu" type="number" min={0} max={1000} value={pr.goal.situps} onChange={(e) => setGoal({ situps: Math.max(0, Math.round(Number(e.target.value))) })} />
+                </Field>
+                <Field label="Goal: pull-ups" htmlFor="pg-gpl">
+                  <Input id="pg-gpl" type="number" min={0} max={1000} value={pr.goal.pullups} onChange={(e) => setGoal({ pullups: Math.max(0, Math.round(Number(e.target.value))) })} />
+                </Field>
+                <Field label={`Goal: run (${unit})`} htmlFor="pg-grun">
+                  <Input id="pg-grun" type="number" min={0} step={0.05} value={toDisp(pr.goal.runKm)} onChange={(e) => setGoal({ runKm: Math.max(0, fromDisp(Number(e.target.value))) })} />
+                </Field>
+              </div>
+              <p className="text-xs text-dim">
+                This week: cleared {week.filter((q) => q.status === "completed").length} of {week.length} training days so far ({trainingDays} scheduled). Level up needs {Math.max(0, trainingDays - pr.allowedMisses)}.
+              </p>
+            </>
+          ) : null}
           <p className="font-display text-[10px] tracking-[0.18em] text-dim">INTELLECTUAL</p>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Study minutes per day" htmlFor="rg-study" hint="Blank scales 90 minutes by difficulty.">
@@ -292,7 +359,7 @@ function RegimenForm({ s }: { s: PlayerSnapshot }) {
               <Toggle key={c} label={CATEGORY_INFO[c].name} hint={CATEGORY_INFO[c].blurb} checked={r.categories[c]} onChange={(v) => setR((x) => ({ ...x, categories: { ...x.categories, [c]: v } }))} />
             ))}
           </div>
-          <Field label={`Recovery passes per week: ${r.recoveryPassesPerWeek}`} hint="A pass waives one day's physical quests with no penalty, for illness, injury or a planned rest day.">
+          <Field label={`Recovery passes per week: ${r.recoveryPassesPerWeek}`} hint="On top of rest days: a pass waives one training day's physical quests with no penalty, for illness or injury. A waived day doesn't count against progression.">
             <Slider min={0} max={2} step={1} value={[r.recoveryPassesPerWeek]} onValueChange={([v]) => setR((x) => ({ ...x, recoveryPassesPerWeek: v }))} aria-label="Recovery passes per week" />
           </Field>
           {cmd.error ? <p className="text-sm text-red-300 light:text-red-700">{cmd.error.message}</p> : null}

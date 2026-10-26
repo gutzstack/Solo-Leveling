@@ -159,8 +159,21 @@ function weekStartOf(date: string): string {
 const SET_ACTIVITIES = new Set(["pushups", "situps", "pullups"]);
 
 /** One-tap logging for rep-based objectives; runs take distance and time. */
+const KM_PER_MI = 1.609344;
+
+/** Run objectives are stored in km; show them in the player's units. */
+function progressText(o: QuestView["objectives"][number], units: string | undefined): string {
+  if (units === "imperial" && "activities" in o.tracker && o.tracker.activities.length === 1 && o.tracker.activities[0] === "run") {
+    const mi = (x: number) => Math.round((x / KM_PER_MI) * 100) / 100;
+    return `${mi(Math.min(o.progress.value, o.progress.target))} / ${mi(o.progress.target)} mi`;
+  }
+  return o.progress.display;
+}
+
 function QuickLog({ activity, today }: { activity: string; today: string }) {
   const cmd = useCommand();
+  const { data } = useSnapshot();
+  const imperial = data?.settings.unit_system === "imperial";
   const [custom, setCustom] = useState("");
   const [km, setKm] = useState("");
   const [min, setMin] = useState("");
@@ -196,14 +209,14 @@ function QuickLog({ activity, today }: { activity: string; today: string }) {
         className="mt-1.5 flex flex-wrap items-center gap-1.5"
         onSubmit={(e) => {
           e.preventDefault();
-          const d = Number(km);
+          const d = Number(km) * (imperial ? KM_PER_MI : 1);
           const m = Number(min);
-          if (d > 0 && m > 0) log(Math.round(d * 100) / 100, m);
+          if (d > 0 && m > 0) log(Math.round(d * 1000) / 1000, m);
           setKm("");
           setMin("");
         }}
       >
-        <Input aria-label="Distance in km" type="number" inputMode="decimal" step="0.01" min={0.1} className="h-7 w-20 text-xs" placeholder="km" value={km} onChange={(e) => setKm(e.target.value)} />
+        <Input aria-label={imperial ? "Distance in miles" : "Distance in km"} type="number" inputMode="decimal" step="0.01" min={0.05} className="h-7 w-20 text-xs" placeholder={imperial ? "mi" : "km"} value={km} onChange={(e) => setKm(e.target.value)} />
         <Input aria-label="Minutes" type="number" inputMode="numeric" min={1} className="h-7 w-20 text-xs" placeholder="min" value={min} onChange={(e) => setMin(e.target.value)} />
         <Button type="submit" size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={cmd.isPending || !km || !min}>
           Log run
@@ -234,6 +247,7 @@ function Countdown({ deadline }: { deadline: string }) {
 
 function QuestCard({ q }: { q: QuestView }) {
   const cmd = useCommand();
+  const units = useSnapshot().data?.settings.unit_system;
   const done = q.status === "completed";
   const inactive = q.status === "expired" || q.status === "abandoned" || q.status === "exempt";
   const failed = q.status === "failed";
@@ -274,7 +288,7 @@ function QuestCard({ q }: { q: QuestView }) {
                 <span className="size-4 rounded-full border border-line" />
               )}
               <span className={cn("flex-1", o.progress.done ? "text-dim line-through decoration-1" : "text-fg")}>{o.title}</span>
-              <span className="font-mono text-[11px] text-faint">{o.progress.display}</span>
+              <span className="font-mono text-[11px] text-faint">{progressText(o, units)}</span>
             </div>
             <XpBar value={o.progress.fraction * 100} max={100} thin label={o.title} className="mt-1" />
             {q.status === "active" && today && !o.progress.done && "activities" in o.tracker && o.tracker.activities.length === 1 ? <QuickLog activity={o.tracker.activities[0]} today={today} /> : null}

@@ -80,9 +80,31 @@ export interface ActivityRow {
   occurred_on: ISODate;
   occurred_at: string;
   details: Record<string, unknown>;
-  source: "manual" | "dungeon" | "import";
+  source: "manual" | "dungeon" | "import" | "trial";
   idempotency_key: string;
   created_at: string;
+}
+
+/** Public part of a trial session (the answer key in `state` never leaves the server). */
+export interface TrialAttempt {
+  itemRating: number;
+  correct: boolean;
+  ms: number;
+  level?: number;
+  topic?: string;
+  questionId?: string;
+}
+
+export interface TrialResultRow {
+  id: string;
+  user_id: string;
+  kind: "reasoning" | "memory" | "speed" | "knowledge";
+  status: "active" | "completed" | "abandoned";
+  seed: number;
+  results: { attempts?: TrialAttempt[]; forward?: number; backward?: number; correct?: number; attempted?: number; rating?: number };
+  score: number | null;
+  started_at: string;
+  completed_at: string | null;
 }
 
 export type QuestKind = "daily" | "weekly" | "main" | "emergency" | "custom";
@@ -229,4 +251,6 @@ export interface GameData {
   titleUnlocks: TitleUnlockRow[];
   equippedTitle: EquippedTitleRow | null;
   notifications: NotificationRow[];
+  trials: TrialResultRow[];
+  questionCount: number;
 }

@@ -1,4 +1,5 @@
 import { ATTRIBUTES } from "../domain/attributes";
+import { METRIC_BY_ID } from "../domain/metrics";
 import { rankFromPercentile } from "../domain/ranks";
 import type { AttributeCode, Rank } from "../domain/types";
 import { levelFromXp, type LevelProgress, type XpConfig } from "../domain/xp";
@@ -46,10 +47,12 @@ export function summarizeAttributes(metrics: MetricState[], xpByAttribute: Recor
     const xp = Math.max(0, Math.round(xpByAttribute[a.code] ?? 0));
     const mix = { verified: 0, estimated: 0, personal: 0 };
     for (const m of scored) if (m.evidence) mix[m.evidence] += 1;
-    const score = scored.length >= MIN_METRICS_FOR_ATTRIBUTE_RANK ? scored.reduce((s, m) => s + (m.score as number), 0) / scored.length : null;
-    const halfWidths = scored.filter((m) => m.scoreBasis === "population" && m.primary?.low !== null && m.primary?.high !== null).map((m) => ((m.primary!.high as number) - (m.primary!.low as number)) / 2);
-    // Averaging k scores: the uncertainty of the mean shrinks roughly with sqrt(k) when errors are independent.
-    const uncertainty = halfWidths.length && score !== null ? Math.sqrt(halfWidths.reduce((s, h) => s + h * h, 0)) / scored.length : null;
+    const w = (m: MetricState) => METRIC_BY_ID[m.id]?.scoreWeight ?? 1;
+    const wsum = scored.reduce((s, m) => s + w(m), 0);
+    const score = scored.length >= MIN_METRICS_FOR_ATTRIBUTE_RANK && wsum > 0 ? scored.reduce((s, m) => s + (m.score as number) * w(m), 0) / wsum : null;
+    const halfWidths = scored.filter((m) => m.scoreBasis === "population" && m.primary?.low !== null && m.primary?.high !== null).map((m) => (w(m) * ((m.primary!.high as number) - (m.primary!.low as number))) / 2);
+    // Weighted mean of independent scores: SE = sqrt(Σ(w·h)²) / Σw.
+    const uncertainty = halfWidths.length && score !== null ? Math.sqrt(halfWidths.reduce((s, h) => s + h * h, 0)) / wsum : null;
     const sorted = [...scored].sort((x, y) => (y.score as number) - (x.score as number));
     const pick = (m: MetricState | undefined) => (m ? { id: m.id, name: m.name, score: m.score as number, rank: m.rank as Rank } : null);
     return {
@@ -70,7 +73,7 @@ export function summarizeAttributes(metrics: MetricState[], xpByAttribute: Recor
       explanation:
         score === null
           ? `Unranked: needs at least ${MIN_METRICS_FOR_ATTRIBUTE_RANK} ranked metrics (has ${scored.length}).`
-          : `Game-defined aggregate: mean of ${scored.length} metric scores (${mix.verified} verified, ${mix.estimated} estimated, ${mix.personal} game-standard). Not a population percentile.`,
+          : `Game-defined aggregate: ${scored.some((m) => w(m) !== 1) ? "weighted " : ""}mean of ${scored.length} metric scores (${mix.verified} verified, ${mix.estimated} estimated, ${mix.personal} game-standard). Not a population percentile.`,
     };
   });
 }

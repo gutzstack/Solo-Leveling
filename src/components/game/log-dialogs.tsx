@@ -78,7 +78,7 @@ function ActivityForm({ defaultType, onDone }: { defaultType?: string; onDone: (
         <Select id="act-type" value={type} onChange={(e) => setType(e.target.value)}>
           {Object.entries(GROUPS).map(([g, label]) => (
             <optgroup key={g} label={label}>
-              {ACTIVITIES.filter((a) => a.group === g).map((a) => (
+              {ACTIVITIES.filter((a) => a.group === g && a.type !== "system_trial").map((a) => (
                 <option key={a.type} value={a.type}>
                   {a.name}
                 </option>

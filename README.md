@@ -26,7 +26,7 @@ scrypt-hashed passwords and HMAC-signed session cookies.
 3. You land on **STATUS**. Log activities and measurements, run dungeons, complete quests.
 
 ```bash
-npm test               # 75 unit + integration + RLS tests (vitest, real PostgreSQL in-memory)
+npm test               # 87 unit + integration + RLS tests (vitest, real PostgreSQL in-memory)
 npm run typecheck && npm run lint
 npm run build && npm start
 BASE_URL=http://localhost:3000 npm run test:e2e   # Playwright smoke test of every page (desktop + mobile)
@@ -89,6 +89,7 @@ indexes and unique idempotency keys throughout.
 | **XP** | Effort XP for meaningful actions (minimum duration/quantity, per-type daily caps, duplicate detection, idempotency keys); performance XP only for genuine personal records (needs a baseline and a minimum improvement, once per metric per 7 days; historical entries never earn XP). Configurable in SYSTEM → Scoring. |
 | **Level** | `XP to next = round(base × level^exponent)`, default `round(100 × level^1.35)`. Levels never affect percentiles. |
 | **Attributes** | STR END PHY INT DIS WLT CHA WIS, each with its own XP level, rank, history chart, metrics, milestones and recommended quests. |
+| **INT / System Trials** | INT is ranked on tests the System administers, not GPA: **Knowledge Trials** (multiple-choice questions from question sets you import as CSV/JSON, or optionally generate with AI, labelled unverified; Elo-style rating), **Reasoning Trials** (procedurally generated, adaptive number-series and number-grid puzzles; rating), **Memory Trials** (forward + backward digit span) and **Speed Trials** (60-second arithmetic). Weights: Knowledge 3×, Reasoning 2×, official exam percentile 1.5×, Memory 1×, Speed 1×, self-reported exam/quiz/assessment averages 0.5×. GPA, study hours and reading are tracked records only. Items and answer keys are generated and checked server-side (the answer key is not client-readable), with per-item time limits. None of this is an IQ score or a population percentile. |
 | **Metric ranks** | Population percentile when appropriate data exists (VERIFIED/ESTIMATED); otherwise game-defined standards or evidence-based goal attainment (PERSONAL). Neutral measures (weight, height, BMI, waist) get descriptive positions, never ranks. Historical PBs are shown separately from current ability. |
 | **Hunter Rank** | Game-defined weighted average of ranked attribute scores (configurable weights), explicitly *not* a population percentile, with an uncertainty band propagated only from population CIs. Provisional until 3 attributes rank. |
 | **Quests** | Daily board (rotating, difficulty-scaled, built-in recovery day), weekly quests, four main story arcs with chapters/prerequisites/titles, optional emergency quests (accept or decline, no penalties), custom quests with server-capped XP. Progress is tracked automatically from logs. |

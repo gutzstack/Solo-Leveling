@@ -3,7 +3,7 @@ import type { LevelProgress } from "../../domain/xp";
 import type { Evaluation, AchievementView, QuestView, SkillView } from "../../game/evaluate";
 import type { AttributeSummary, HunterSummary } from "../../game/hunter";
 import type { MetricState } from "../../game/metric-state";
-import type { ActivityRow, DungeonSessionRow, GameData, NotificationRow, ProfileRow, SettingsRow } from "../../game/rows";
+import type { ActivityRow, DungeonSessionRow, GameData, NotificationRow, ProfileRow, SettingsRow, TrialResultRow } from "../../game/rows";
 import { BENCHMARK_SOURCES } from "../../percentile/registry";
 import type { BenchmarkSource } from "../../percentile/registry-schema";
 import type { XpConfig } from "../../domain/xp";
@@ -37,6 +37,7 @@ export interface PlayerSnapshot {
   activeDays: string[];
   notifications: NotificationRow[];
   sources: BenchmarkSource[];
+  trials: TrialResultRow[];
 }
 
 export function buildSnapshot(data: GameData, ev: Evaluation, backend: "local" | "supabase"): PlayerSnapshot {
@@ -75,5 +76,6 @@ export function buildSnapshot(data: GameData, ev: Evaluation, backend: "local" |
     activeDays: [...ev.stats.activeDays].sort(),
     notifications: data.notifications,
     sources: BENCHMARK_SOURCES,
+    trials: data.trials.slice(-100),
   };
 }

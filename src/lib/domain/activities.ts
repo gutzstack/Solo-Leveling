@@ -38,6 +38,7 @@ export const ACTIVITIES: ActivityDef[] = [
   { type: "practice_exam", name: "Practice examination", attribute: "INT", xp: 100, dailyCap: 1, minMinutes: 30, requiresDuration: true, icon: "ClipboardCheck", group: "study" },
   { type: "quiz", name: "Quiz / question bank block", attribute: "INT", xp: 20, dailyCap: 3, minMinutes: 10, requiresDuration: true, icon: "ListChecks", group: "study" },
   { type: "reading", name: "Reading", attribute: "INT", xp: 15, dailyCap: 3, minMinutes: 15, requiresDuration: true, icon: "BookMarked", group: "study", quantity: { label: "Pages", kind: "pages" } },
+  { type: "system_trial", name: "System Trial", attribute: "INT", xp: 25, dailyCap: 4, requiresDuration: false, icon: "Brain", group: "study" },
   { type: "educational_milestone", name: "Educational milestone", attribute: "INT", xp: 150, dailyCap: 1, requiresDuration: false, icon: "GraduationCap", group: "study" },
   // Wellness
   { type: "reflection", name: "Daily reflection / journal", attribute: "WIS", xp: 20, dailyCap: 1, minMinutes: 3, requiresDuration: true, icon: "NotebookPen", group: "wellness" },

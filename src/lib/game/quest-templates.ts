@@ -176,7 +176,7 @@ export function storyArcs(p: ProfileRow): StoryArc[] {
     titleReward: "white_coat",
     chapters: [
       { number: 1, name: "Chapter I: The Foundations", description: "Set your baseline and build the study habit.", objectives: [
-        { title: "Log your current GPA", tracker: { type: "metric_logged", metric: "program_gpa" }, target: 1 },
+        { title: "Complete 3 System Trials", tracker: { type: "lifetime_stat", stat: "trials_completed" }, target: 3 },
         { title: "20 focused study hours", tracker: { type: "activity_minutes", activities: ["study", "quiz", "practice_exam"] }, target: 1200 },
       ] },
       { number: 2, name: "Chapter II: The Gauntlet of Knowledge", description: "Volume and pressure.", objectives: [
@@ -185,7 +185,7 @@ export function storyArcs(p: ProfileRow): StoryArc[] {
       ] },
       { number: 3, name: "Chapter III: The Proving Grounds", description: "Apply what you know under pressure.", objectives: [
         { title: "25 quiz or practice-exam blocks", tracker: { type: "activity_count", activities: ["quiz", "practice_exam"] }, target: 25 },
-        { title: "Retrieval accuracy ≥ 80%", tracker: { type: "metric_reach", metric: "retrieval_accuracy", target: 80, direction: "higher" }, target: 1 },
+        { title: "Reasoning rating ≥ 1150", tracker: { type: "metric_reach", metric: "reasoning_rating", target: 1150, direction: "higher" }, target: 1 },
       ] },
       { number: 4, name: "Chapter IV: The Examiner's Trial", description: "Prove it on exams.", objectives: [
         { title: "Course exam average ≥ 90%", tracker: { type: "metric_reach", metric: "exam_average", target: 90, direction: "higher" }, target: 1 },
@@ -193,7 +193,7 @@ export function storyArcs(p: ProfileRow): StoryArc[] {
       ] },
       { number: 5, name: "Chapter V: Ascension", description: "Mastery.", objectives: [
         { title: "300 focused study hours", tracker: { type: "activity_minutes", activities: ["study", "quiz", "practice_exam"] }, target: 18000 },
-        { title: "GPA ≥ 3.70", tracker: { type: "metric_reach", metric: "program_gpa", target: 3.7, direction: "higher" }, target: 1 },
+        { title: "Knowledge rating ≥ 1300", tracker: { type: "metric_reach", metric: "knowledge_rating", target: 1300, direction: "higher" }, target: 1 },
       ] },
     ],
   });

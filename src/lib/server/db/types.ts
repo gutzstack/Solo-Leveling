@@ -25,6 +25,8 @@ export const TABLES = [
   "title_unlocks",
   "equipped_titles",
   "notifications",
+  "question_items",
+  "trial_sessions",
 ] as const;
 export type Table = (typeof TABLES)[number];
 
@@ -111,4 +113,6 @@ export const PRIMARY_KEY: Record<Table, string> = {
   title_unlocks: "id",
   equipped_titles: "user_id",
   notifications: "id",
+  question_items: "id",
+  trial_sessions: "id",
 };

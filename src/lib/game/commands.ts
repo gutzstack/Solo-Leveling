@@ -73,7 +73,7 @@ export const CommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("delete_metric_entry"), entryId: uuid }),
   z.object({
     type: z.literal("log_activity"),
-    activity: z.string().refine((t) => Boolean(ACTIVITY_BY_TYPE[t]), "unknown activity"),
+    activity: z.string().refine((t) => Boolean(ACTIVITY_BY_TYPE[t]) && t !== "system_trial", "unknown activity (System Trials are logged automatically when you complete one)"),
     durationMin: z.number().min(0).max(1440).nullable(),
     quantity: z.number().min(0).max(1e7).nullable(),
     occurredOn: isoDate,
@@ -121,6 +121,7 @@ export const CommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("equip_title"), titleCode: z.string().max(60).nullable() }),
   z.object({ type: z.literal("mark_notifications_read"), ids: z.array(uuid).max(200).optional() }),
   z.object({ type: z.literal("daily_login") }),
+  z.object({ type: z.literal("trial_completed"), sessionId: uuid }),
   z.object({ type: z.literal("sync") }),
 ]);
 export type Command = z.infer<typeof CommandSchema>;

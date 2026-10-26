@@ -1,4 +1,5 @@
 import { addDays, daysBetween, weekStart, type ISODate } from "../domain/dates";
+import { replayRating, START_RATING } from "../domain/trials";
 import type { MetricDef } from "../domain/metrics";
 import { activitiesBetween, CARDIO_TYPES, lastNDays, STUDY_TYPES, TRAINING_TYPES, type Stats } from "./stats";
 import type { GameData, MetricEntryRow } from "./rows";
@@ -155,6 +156,24 @@ export function computeDerived(def: MetricDef, data: GameData, stats: Stats, cur
       return { value: extras.academicSkills, note: "Academic skill nodes unlocked." };
     case "reading_pages_week":
       return { value: sumQty(["reading"], 7), note: "Pages logged, last 7 days." };
+    case "knowledge_rating":
+    case "reasoning_rating": {
+      const kind = def.id === "knowledge_rating" ? "knowledge" : "reasoning";
+      const attempts = data.trials
+        .filter((t) => t.kind === kind && t.status === "completed")
+        .sort((a, b) => (a.completed_at ?? "").localeCompare(b.completed_at ?? ""))
+        .flatMap((t) => t.results.attempts ?? []);
+      if (attempts.length < 10) return { value: null, note: `${attempts.length}/10 items answered. Complete ${kind === "knowledge" ? "Knowledge" : "Reasoning"} Trials to establish a rating.` };
+      return { value: replayRating(attempts), note: `Rating from ${attempts.length} answered items (starts at ${START_RATING}).` };
+    }
+    case "working_memory_span":
+    case "processing_speed": {
+      const kind = def.id === "working_memory_span" ? "memory" : "speed";
+      const since = data.now.getTime() - def.currentWindowDays * 86_400_000;
+      const scores = data.trials.filter((t) => t.kind === kind && t.status === "completed" && t.completed_at && Date.parse(t.completed_at) >= since && t.score !== null).map((t) => t.score as number);
+      if (!scores.length) return { value: null, note: `Complete a ${kind === "memory" ? "Memory" : "Speed"} Trial to measure this.` };
+      return { value: Math.max(...scores), note: `Best of ${scores.length} trial${scores.length === 1 ? "" : "s"} in the last ${def.currentWindowDays} days.` };
+    }
     case "educational_milestones":
       return { value: stats.counts.activity_educational_milestone ?? 0, note: "Lifetime." };
     case "academic_improvement": {

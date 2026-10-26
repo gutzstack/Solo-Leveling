@@ -73,6 +73,11 @@ export default function AttributeDetail() {
           <p className="mt-4 text-sm text-dim">{def.description}</p>
           <p className="mt-2 text-xs text-faint">{a.explanation}</p>
           {def.scientificNote ? <p className="mt-2 rounded-lg border border-line/60 bg-bg/40 p-2 text-xs text-dim">{def.scientificNote}</p> : null}
+          {code === "INT" ? (
+            <Button asChild className="mt-3">
+              <Link href="/trials">Take a System Trial</Link>
+            </Button>
+          ) : null}
           {a.strongest ? <p className="mt-3 text-sm text-dim">Strongest: <span className="text-fg">{a.strongest.name}</span> ({a.strongest.rank})</p> : null}
           {a.weakest ? <p className="text-sm text-dim">Weakest: <span className="text-fg">{a.weakest.name}</span> ({a.weakest.rank})</p> : null}
         </Panel>

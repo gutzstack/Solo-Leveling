@@ -127,6 +127,9 @@ export function evaluate(data: GameData): Evaluation {
     quests_weekly_completed: c.quests_weekly_completed ?? 0,
     quests_emergency_completed: c.quests_emergency_completed ?? 0,
     current_5k_seconds: currentValue("run_5k") ?? Number.POSITIVE_INFINITY,
+    reasoning_rating_value: currentValue("reasoning_rating") ?? 0,
+    knowledge_rating_value: currentValue("knowledge_rating") ?? 0,
+    working_memory_value: currentValue("working_memory_span") ?? 0,
   };
 
   const skills: SkillView[] = SKILLS.map((s) => {

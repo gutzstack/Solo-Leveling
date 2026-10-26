@@ -47,11 +47,11 @@ export const ATTRIBUTES: AttributeDef[] = [
     name: "Intelligence / Knowledge",
     short: "INT",
     description:
-      "Measurable academic and learning performance: GPA, exams, retrieval practice, study hours. Not IQ.",
+      "Ranked on System Trials: knowledge of your own material, reasoning, working memory and processing speed. GPA is kept only as a record. Not IQ.",
     color: "#3987e5",
     icon: "Brain",
     scientificNote:
-      "GPA, exam scores and study metrics measure academic performance and knowledge, not general intelligence. Cognitive test scores are tracked separately and only from validated instruments.",
+      "The INT rank is a game-defined score built from tests the System gives you (Knowledge 3×, Reasoning 2×, official exam percentile 1.5×, Memory 1×, Speed 1×, self-reported exam and quiz averages 0.5×). It is not an IQ score or a population percentile. GPA and study hours are tracked but not ranked.",
   },
   {
     code: "DIS",

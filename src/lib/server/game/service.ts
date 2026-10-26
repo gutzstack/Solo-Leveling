@@ -13,7 +13,7 @@ import { evaluate, planAwards, type Evaluation } from "../../game/evaluate";
 import { customMetricDef } from "../../game/metric-state";
 import { generateDailyQuests, generateEmergencyQuests, generateWeeklyQuests, mainQuestDrafts, type QuestDraft } from "../../game/quest-templates";
 import { computeStats } from "../../game/stats";
-import type { ActivityRow, CustomMetricRow, DungeonSessionRow, GameData, MetricEntryRow, ObjectiveRow, ProfileRow, QuestRow, SettingsRow } from "../../game/rows";
+import type { ActivityRow, CustomMetricRow, DungeonSessionRow, GameData, MetricEntryRow, ObjectiveRow, ProfileRow, QuestRow, SettingsRow, TrialResultRow } from "../../game/rows";
 import { UniqueViolationError, type Database, type DataClient } from "../db/types";
 import { buildSnapshot, type PlayerSnapshot } from "./snapshot";
 
@@ -74,7 +74,7 @@ export class GameService {
   async load(): Promise<GameData> {
     const u = this.u;
     const uid = { user_id: this.userId };
-    const [profiles, settings, customMetrics, entries, activities, quests, objectives, questCompletions, sessions, xp, skillUnlocks, achievementUnlocks, titleUnlocks, equipped, notifications] = await Promise.all([
+    const [profiles, settings, customMetrics, entries, activities, quests, objectives, questCompletions, sessions, xp, skillUnlocks, achievementUnlocks, titleUnlocks, equipped, notifications, trialRows, questions] = await Promise.all([
       u.select<ProfileRow>("profiles", { eq: uid }),
       u.select<SettingsRow>("settings", { eq: uid }),
       u.select<CustomMetricRow>("metrics", { eq: { user_id: this.userId, is_custom: true } }),
@@ -90,6 +90,9 @@ export class GameService {
       u.select<GameData["titleUnlocks"][number]>("title_unlocks", { eq: uid }),
       u.select<NonNullable<GameData["equippedTitle"]>>("equipped_titles", { eq: uid }),
       u.select<GameData["notifications"][number]>("notifications", { eq: uid, order: [{ column: "created_at", ascending: false }], limit: 60 }),
+      // trial_sessions.state holds answer keys and isn't client-readable, so load via the service role (scoped to this user).
+      this.svc.select<TrialResultRow & { state?: unknown }>("trial_sessions", { eq: uid, order: [{ column: "started_at" }] }),
+      u.select<{ id: string }>("question_items", { eq: { ...uid, flagged: false } }),
     ]);
     if (!profiles[0] || !settings[0]) throw new GameError("Player profile missing", 500);
     const now = this.clock();
@@ -113,6 +116,12 @@ export class GameService {
       titleUnlocks,
       equippedTitle: equipped[0] ?? null,
       notifications,
+      trials: trialRows.map((t) => {
+        const { state, ...rest } = t;
+        void state; // answer keys stay server-side
+        return rest;
+      }),
+      questionCount: questions.length,
     };
   }
 
@@ -464,6 +473,15 @@ export class GameService {
         events.push({ type: "daily_login", streak, firstToday, newQuests });
         break;
       }
+      case "trial_completed": {
+        const t = data.trials.find((x) => x.id === cmd.sessionId);
+        if (!t || t.status !== "completed") throw new GameError("Trial not found or not completed.", 404);
+        if (!data.activities.some((a) => a.idempotency_key === `trial:${t.id}`)) {
+          const minutes = t.completed_at ? Math.max(1, Math.round((Date.parse(t.completed_at) - Date.parse(t.started_at)) / 60_000)) : null;
+          await this.logActivity(data, { type: "log_activity", activity: "system_trial", durationMin: minutes, quantity: t.score, occurredOn: data.today, note: `${t.kind} trial`, idempotencyKey: `trial:${t.id}`, confirmDuplicate: true }, events, "trial", { trialSessionId: t.id, kind: t.kind });
+        }
+        break;
+      }
       case "sync":
         break;
     }
@@ -607,7 +625,7 @@ export class GameService {
     }
   }
 
-  private async logActivity(data: GameData, cmd: Extract<Command, { type: "log_activity" }>, events: GameEvent[], source: "manual" | "dungeon" = "manual", extraDetails: Record<string, unknown> = {}): Promise<ActivityRow> {
+  private async logActivity(data: GameData, cmd: Omit<Extract<Command, { type: "log_activity" }>, "activity"> & { activity: string }, events: GameEvent[], source: "manual" | "dungeon" | "trial" = "manual", extraDetails: Record<string, unknown> = {}): Promise<ActivityRow> {
     const def = ACTIVITY_BY_TYPE[cmd.activity];
     if (cmd.occurredOn > data.today) throw new GameError("Activities cannot be dated in the future.");
     if (daysBetween(cmd.occurredOn, data.today) > 30 && source === "manual") throw new GameError("Activities older than 30 days can be added through data import.");

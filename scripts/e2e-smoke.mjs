@@ -81,7 +81,21 @@ try {
     await page.keyboard.press("Escape");
   });
 
-  const pages = ["attributes", "attributes/END", "quests", "dungeons", "skills", "achievements", "analytics", "rankings", "system"];
+  await step("reasoning trial: complete 12 items", async () => {
+    await page.goto(BASE + "/trials");
+    await page.getByRole("heading", { name: "Reasoning Trial" }).waitFor({ timeout: 20000 });
+    const card = page.locator("section").filter({ has: page.getByRole("heading", { name: "Reasoning Trial" }) }).last();
+    await card.getByRole("button", { name: "Begin" }).click();
+    for (let i = 0; i < 12; i++) {
+      await page.getByText(`Item ${i + 1} / 12`).waitFor({ timeout: 15000 });
+      await page.locator("button", { hasText: /^A/ }).first().click();
+    }
+    await page.getByText("[TRIAL COMPLETE]").waitFor({ timeout: 15000 });
+    await page.screenshot({ path: `${OUT}/04-trial-complete.png`, fullPage: true });
+    await page.getByRole("button", { name: "Return" }).click();
+  });
+
+  const pages = ["attributes", "attributes/INT", "quests", "dungeons", "trials", "skills", "achievements", "analytics", "rankings", "system"];
   for (const p of pages) {
     await step(`page /${p}`, async () => {
       await page.goto(`${BASE}/${p}`);

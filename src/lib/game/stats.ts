@@ -132,6 +132,12 @@ export function computeStats(data: GameData): Stats {
   c.metrics_tracked = new Set(data.entries.map((e) => e.metric_id)).size;
   c.sleep_in_range_nights = data.entries.filter((e) => e.metric_id === "sleep_duration" && e.value >= 7 && e.value <= 9).length;
   c.custom_metrics_created = data.customMetrics.length;
+  for (const t of data.trials) {
+    if (t.status !== "completed") continue;
+    inc("trials_completed");
+    inc(`trials_${t.kind}`);
+  }
+  c.question_bank = data.questionCount;
   c.skills_unlocked = data.skillUnlocks.length;
   c.login_streak = data.settings.login_streak;
   c.onboarded = data.profile.onboarded_at ? 1 : 0;

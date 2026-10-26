@@ -245,6 +245,26 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     [10, "Exam Hardened", "rare"],
     [25, "Unshakeable Under Pressure", "epic"],
   ]),
+  ...family("Trials", "Brain", "trials_completed", (t) => `Complete ${t} System Trial${t === 1 ? "" : "s"}.`, [
+    [1, "Trial Initiate", "common"],
+    [10, "Trial Seeker", "uncommon"],
+    [50, "Trial Veteran", "rare"],
+    [200, "Trial Sovereign", "epic"],
+  ]),
+  ...family("Trials", "Puzzle", "reasoning_rating_value", (t) => `Reach a Reasoning rating of ${t}.`, [
+    [1150, "Pattern Seer", "uncommon"],
+    [1300, "Logic Adept", "rare"],
+    [1450, "Mind of the Monarch", "epic"],
+  ]),
+  ...family("Trials", "Layers", "knowledge_rating_value", (t) => `Reach a Knowledge rating of ${t}.`, [
+    [1150, "Well-Read", "uncommon"],
+    [1300, "Master of the Material", "rare"],
+    [1450, "Living Codex", "epic"],
+  ]),
+  ...family("Trials", "Hash", "working_memory_value", (t) => `Reach a combined digit span of ${t}.`, [
+    [12, "Sharp Recall", "uncommon"],
+    [15, "Photographic", "rare"],
+  ]),
   ...family("Attributes", "BarChart3", "max_attribute_level", (t) => `Raise any attribute to level ${t}.`, [
     [5, "Specialist", "common"],
     [10, "Expert", "uncommon"],

@@ -33,13 +33,14 @@ export const ProgressionSchema = z.object({
   runStepKm: z.number().min(0).max(5).default(0.4),
   /** training days you may miss in a week and still level up */
   allowedMisses: z.number().int().min(0).max(5).default(1),
-  goal: z.object({ pushups: reps(100), situps: reps(100), pullups: reps(100), runKm: km(5) }).prefault({}),
+  goal: z.object({ pushups: reps(100), situps: reps(100), squats: reps(100), pullups: reps(100), runKm: km(5) }).prefault({}),
 });
 
 export const RegimenSchema = z.object({
   categories: z.object({ physical: z.boolean().default(true), intellectual: z.boolean().default(true), mental: z.boolean().default(true), health: z.boolean().default(true), social: z.boolean().default(true) }).prefault({}),
   pushups: reps(35),
   situps: reps(35),
+  squats: reps(35),
   pullups: reps(35),
   runKm: km(START_RUN_KM),
   /** ISO weekdays (1 = Monday … 7 = Sunday) with no training regimen, only a recovery quest. */
@@ -88,10 +89,11 @@ export function progressRegimen(r: Regimen, cleared: number, trained: number): {
     ...r,
     pushups: move(r.pushups, pr.repStep, pr.goal.pushups, 10),
     situps: move(r.situps, pr.repStep, pr.goal.situps, 10),
+    squats: move(r.squats, pr.repStep, pr.goal.squats, 10),
     pullups: move(r.pullups, pr.pullupStep, pr.goal.pullups, 10),
     runKm: round(move(r.runKm, pr.runStepKm, pr.goal.runKm, 1)),
   };
-  const same = next.pushups === r.pushups && next.situps === r.situps && next.pullups === r.pullups && next.runKm === r.runKm;
+  const same = next.pushups === r.pushups && next.situps === r.situps && next.squats === r.squats && next.pullups === r.pullups && next.runKm === r.runKm;
   return { next, change: same ? "hold" : change };
 }
 

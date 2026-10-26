@@ -30,6 +30,7 @@ export const ACTIVITIES: ActivityDef[] = [
   { type: "workout", name: "Strength workout", attribute: "STR", xp: 50, dailyCap: 2, minMinutes: 20, requiresDuration: true, icon: "Dumbbell", group: "training", quantity: { label: "Volume (sets × reps × load)", kind: "volume_kg" } },
   { type: "pushups", sets: true, name: "Push-ups", attribute: "STR", xp: 10, dailyCap: 4, minQuantity: 10, requiresDuration: false, icon: "Dumbbell", group: "training", quantity: { label: "Reps", kind: "count" } },
   { type: "situps", sets: true, name: "Sit-ups", attribute: "STR", xp: 10, dailyCap: 4, minQuantity: 10, requiresDuration: false, icon: "Dumbbell", group: "training", quantity: { label: "Reps", kind: "count" } },
+  { type: "squats", sets: true, name: "Squats", attribute: "STR", xp: 10, dailyCap: 4, minQuantity: 10, requiresDuration: false, icon: "Dumbbell", group: "training", quantity: { label: "Reps", kind: "count" } },
   { type: "pullups", sets: true, name: "Pull-ups", attribute: "STR", xp: 10, dailyCap: 4, minQuantity: 5, requiresDuration: false, icon: "Dumbbell", group: "training", quantity: { label: "Reps", kind: "count" } },
   { type: "run", name: "Run", attribute: "END", xp: 40, dailyCap: 2, minMinutes: 10, minQuantity: 1.5, requiresDuration: true, icon: "Footprints", group: "training", quantity: { label: "Distance", kind: "distance" } },
   { type: "cycle", name: "Cycling", attribute: "END", xp: 40, dailyCap: 2, minMinutes: 20, requiresDuration: true, icon: "Bike", group: "training", quantity: { label: "Distance", kind: "distance" } },

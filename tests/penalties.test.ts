@@ -25,15 +25,16 @@ describe("daily quest categories and the training regimen", () => {
     expect(regimen.objectives.map((o) => [o.tracker.type === "activity_quantity" ? o.tracker.activities[0] : o.tracker.type, o.target])).toEqual([
       ["pushups", 35],
       ["situps", 35],
+      ["squats", 35],
       ["pullups", 35],
       ["run", 2.41],
     ]);
-    expect(regimen.objectives[3].title).toBe("Run 1.5 mi");
+    expect(regimen.objectives[4].title).toBe("Run 1.5 mi");
   });
 
   it("completes the regimen from reps logged in sets", async () => {
     const { game } = await onboardedPlayer(db, testClock());
-    for (const a of ["pushups", "situps", "pullups"]) for (const n of [10, 10, 15]) await reps(game, a, n, "2026-10-20");
+    for (const a of ["pushups", "situps", "squats", "pullups"]) for (const n of [10, 10, 15]) await reps(game, a, n, "2026-10-20");
     const r = await reps(game, "run", 2.414, "2026-10-20");
     const regimen = r.snapshot.quests.find((q) => q.template_code === "daily_regimen")!;
     expect(regimen.status).toBe("completed");
@@ -43,7 +44,9 @@ describe("daily quest categories and the training regimen", () => {
     const { game } = await onboardedPlayer(db, testClock());
     const q = (await game.snapshot()).quests.find((x) => x.template_code === "daily_regimen")!;
     await db.raw("update public.quests set created_at = '2026-10-20T04:00:00Z' where id = $1", [q.id]);
-    for (const [i, t] of [100, 100, 100, 5].entries()) await db.raw("update public.quest_objectives set target = $1 where quest_id = $2 and sort_order = $3", [t, q.id, i]);
+    // the old regimen had no squats
+    await db.raw("delete from public.quest_objectives where quest_id = $1 and sort_order = 2", [q.id]);
+    for (const [i, t] of [[0, 100], [1, 100], [3, 100], [4, 5]]) await db.raw("update public.quest_objectives set target = $1 where quest_id = $2 and sort_order = $3", [t, q.id, i]);
     await game.execute({ type: "update_settings", settings: { regimen: { pushups: 35 } } });
     const after = (await game.snapshot()).quests.find((x) => x.id === q.id)!;
     expect(after.objectives.map((o) => o.target)).toEqual([35, 35, 35, 2.41]);
@@ -51,7 +54,7 @@ describe("daily quest categories and the training regimen", () => {
 
   it("deleting a log re-opens the quest it completed and takes back the XP", async () => {
     const { game } = await onboardedPlayer(db, testClock());
-    for (const a of ["pushups", "situps", "pullups"]) await reps(game, a, 35, "2026-10-20");
+    for (const a of ["pushups", "situps", "squats", "pullups"]) await reps(game, a, 35, "2026-10-20");
     let snap = (await reps(game, "run", 2.5, "2026-10-20")).snapshot;
     const regimen = () => snap.quests.find((q) => q.template_code === "daily_regimen")!;
     expect(regimen().status).toBe("completed");
@@ -61,7 +64,7 @@ describe("daily quest categories and the training regimen", () => {
     const net = snap.xpLedger.filter((x) => x.source_id === regimen().id).reduce((a, x) => a + x.amount, 0);
     expect(net).toBe(0);
     const again = await reps(game, "run", 2.5, "2026-10-20");
-    expect(again.events).toContainEqual(expect.objectContaining({ type: "quest_complete", title: "PREPARATIONS TO BECOME POWERFUL", xp: 100 }));
+    expect(again.events).toContainEqual(expect.objectContaining({ type: "quest_complete", title: "PREPARATIONS TO BECOME POWERFUL", xp: 125 }));
   });
 
   it("uses the player's regimen from the next day, never mid-day", async () => {
@@ -69,11 +72,11 @@ describe("daily quest categories and the training regimen", () => {
     const { game } = await onboardedPlayer(db, clock);
     await game.execute({ type: "update_settings", settings: { regimen: { pushups: 50, situps: 0, pullups: 20, runKm: 3, categories: { physical: true, intellectual: true, mental: false, health: true, social: false } } } });
     let snap = await game.snapshot();
-    expect(snap.quests.find((q) => q.template_code === "daily_regimen" && q.period_start === "2026-10-20")!.objectives).toHaveLength(4);
+    expect(snap.quests.find((q) => q.template_code === "daily_regimen" && q.period_start === "2026-10-20")!.objectives).toHaveLength(5);
     clock.set("2026-10-22T14:00:00.000Z");
     snap = await game.snapshot();
     const tomorrow = snap.quests.filter((q) => q.kind === "daily" && q.period_start === "2026-10-22");
-    expect(tomorrow.find((q) => q.template_code === "daily_regimen")!.objectives.map((o) => o.target)).toEqual([50, 20, 3]);
+    expect(tomorrow.find((q) => q.template_code === "daily_regimen")!.objectives.map((o) => o.target)).toEqual([50, 35, 20, 3]);
     expect(tomorrow.some((q) => q.config.category === "mental" || q.config.category === "social")).toBe(false);
   });
 });
@@ -91,7 +94,7 @@ describe("rest days and weekly progression", () => {
 
   it("progressRegimen steps up, holds or steps back, capped at the goal", () => {
     const r = DEFAULT_REGIMEN;
-    expect(progressRegimen(r, 4, 5)).toMatchObject({ change: "up", next: { pushups: 40, situps: 40, pullups: 38, runKm: 2.81 } });
+    expect(progressRegimen(r, 4, 5)).toMatchObject({ change: "up", next: { pushups: 40, situps: 40, squats: 40, pullups: 38, runKm: 2.81 } });
     expect(progressRegimen(r, 3, 5).change).toBe("hold");
     expect(progressRegimen({ ...r, pushups: 50 }, 1, 5)).toMatchObject({ change: "down", next: { pushups: 45, pullups: 32 } });
     expect(progressRegimen(r, 2, 2).change).toBe("hold");
@@ -104,14 +107,14 @@ describe("rest days and weekly progression", () => {
     const { game } = await onboardedPlayer(db, clock, false);
     for (const d of ["19", "20", "22", "23", "24"]) {
       clock.set(`2026-10-${d}T14:00:00.000Z`);
-      for (const a of ["pushups", "situps", "pullups"]) await reps(game, a, 35, `2026-10-${d}`);
+      for (const a of ["pushups", "situps", "squats", "pullups"]) await reps(game, a, 35, `2026-10-${d}`);
       await reps(game, "run", 2.5, `2026-10-${d}`);
     }
     clock.set("2026-10-26T14:00:00.000Z");
     const r = await game.execute({ type: "sync" });
     expect(r.events).toContainEqual(expect.objectContaining({ type: "info", title: "Training level up" }));
     const mon = r.snapshot.quests.find((q) => q.template_code === "daily_regimen" && q.period_start === "2026-10-26")!;
-    expect(mon.objectives.map((o) => o.target)).toEqual([40, 40, 38, 2.81]);
+    expect(mon.objectives.map((o) => o.target)).toEqual([40, 40, 40, 38, 2.81]);
     // only once per week
     const again = await game.execute({ type: "sync" });
     expect(again.events.some((e) => e.type === "info" && e.title === "Training level up")).toBe(false);
@@ -132,7 +135,7 @@ describe("penalties", () => {
     expect(failed.every((q) => q.status === "failed")).toBe(true);
     const penalties = r.snapshot.xpLedger.filter((x) => x.kind === "penalty");
     expect(penalties.length).toBe(failed.length);
-    expect(penalties.find((x) => x.source_id === failed.find((q) => q.template_code === "daily_regimen")!.id)!.amount).toBe(-100);
+    expect(penalties.find((x) => x.source_id === failed.find((q) => q.template_code === "daily_regimen")!.id)!.amount).toBe(-125);
 
     const zone = r.snapshot.quests.find((q) => q.kind === "penalty" && q.period_start === "2026-10-21")!;
     const pull = zone.objectives.find((o) => o.title.includes("pull-ups"))!;
@@ -184,7 +187,7 @@ describe("penalties", () => {
     expect(next.xpLedger.some((x) => x.source_id === regimen.id)).toBe(false);
     await expect(game.execute({ type: "use_recovery_pass" })).rejects.toThrow(/this week/);
     const zone = next.quests.find((q) => q.kind === "penalty" && q.period_start === "2026-10-21");
-    expect(zone?.objectives.some((o) => /push-ups|pull-ups|sit-ups|Run/.test(o.title)) ?? false).toBe(false);
+    expect(zone?.objectives.some((o) => /push-ups|pull-ups|sit-ups|squats|Run/.test(o.title)) ?? false).toBe(false);
   });
 
   it("abandoning custom quests, retreating from dungeons and abandoning trials cost XP", async () => {

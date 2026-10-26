@@ -290,8 +290,11 @@ export class GameService {
       const objs = old ? data.objectives.filter((o) => o.quest_id === old.id).sort((a, b) => a.sort_order - b.sort_order) : [];
       if (old && objs.map((o) => o.target).join() === "100,100,100,5") {
         const fresh = generateDailyQuests(p, data.today, cfg, this.userId, regimen, units).find((d) => d.template_code === "daily_regimen");
-        if (fresh && fresh.objectives.length === objs.length && fresh.objectives.every((f, i) => f.target <= objs[i].target))
-          for (const [i, o] of objs.entries()) await this.svc.update("quest_objectives", { id: o.id, user_id: this.userId }, { target: fresh.objectives[i].target, title: fresh.objectives[i].title, completed_at: null });
+        const act = (t: { type: string; activities?: string[] }) => t.activities?.join() ?? t.type;
+        for (const o of objs) {
+          const f = fresh?.objectives.find((x) => act(x.tracker) === act(o.tracker));
+          if (f && f.target < o.target) await this.svc.update("quest_objectives", { id: o.id, user_id: this.userId }, { target: f.target, title: f.title, completed_at: null });
+        }
       }
     }
 
@@ -304,7 +307,7 @@ export class GameService {
       regimen = { ...next, progressedWeek: ws };
       await this.svc.update("settings", { user_id: this.userId }, { regimen });
       if (change !== "hold") {
-        const parts = [regimen.pushups && `${regimen.pushups} push-ups`, regimen.situps && `${regimen.situps} sit-ups`, regimen.pullups && `${regimen.pullups} pull-ups`, regimen.runKm && `a ${formatRunDistance(regimen.runKm, units)} run`].filter(Boolean).join(", ");
+        const parts = [regimen.pushups && `${regimen.pushups} push-ups`, regimen.situps && `${regimen.situps} sit-ups`, regimen.squats && `${regimen.squats} squats`, regimen.pullups && `${regimen.pullups} pull-ups`, regimen.runKm && `a ${formatRunDistance(regimen.runKm, units)} run`].filter(Boolean).join(", ");
         const body = change === "up" ? `You cleared ${cleared} of ${last.length} training days. This week's regimen: ${parts}.` : `You cleared only ${cleared} of ${last.length} training days. The regimen steps back to ${parts}.`;
         events.push({ type: "info", title: change === "up" ? "Training level up" : "Training scaled back", body });
         await this.notify("quest", change === "up" ? "[TRAINING LEVEL UP]" : "[TRAINING ADJUSTED]", body);

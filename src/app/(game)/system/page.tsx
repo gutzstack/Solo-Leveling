@@ -253,7 +253,7 @@ function RegimenForm({ s }: { s: PlayerSnapshot }) {
   const unit = imperial ? "mi" : "km";
   const toDisp = (km: number) => Math.round((imperial ? km / 1.609344 : km) * 100) / 100;
   const fromDisp = (v: number) => Math.round((imperial ? v * 1.609344 : v) * 100) / 100;
-  const num = (k: "pushups" | "situps" | "pullups", label: string) => (
+  const num = (k: "pushups" | "situps" | "squats" | "pullups", label: string) => (
     <Field label={label} htmlFor={`rg-${k}`}>
       <Input id={`rg-${k}`} type="number" min={0} max={1000} value={r[k]} onChange={(e) => setR((x) => ({ ...x, [k]: Math.max(0, Math.round(Number(e.target.value))) }))} />
     </Field>
@@ -270,7 +270,7 @@ function RegimenForm({ s }: { s: PlayerSnapshot }) {
   const week = s.quests.filter((q) => q.template_code === "daily_regimen" && q.period_start >= ws && q.status !== "exempt");
   const trainingDays = 7 - r.restDays.length;
   const mult = PENALTY_MULTIPLIER[s.profile.difficulty];
-  const physicalObjectives = [r.pushups, r.situps, r.pullups, r.runKm].filter((v) => v > 0).length;
+  const physicalObjectives = [r.pushups, r.situps, r.squats, r.pullups, r.runKm].filter((v) => v > 0).length;
   return (
     <div className="grid gap-5 lg:grid-cols-2">
       <Panel title="Daily regimen" subtitle="The targets behind your daily quests. Changes apply from tomorrow's board; today's quests keep their targets.">
@@ -286,6 +286,7 @@ function RegimenForm({ s }: { s: PlayerSnapshot }) {
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {num("pushups", "Push-ups")}
             {num("situps", "Sit-ups")}
+            {num("squats", "Squats")}
             {num("pullups", "Pull-ups")}
             <Field label={`Run (${unit})`} htmlFor="rg-run">
               <Input id="rg-run" type="number" min={0} step={0.05} value={toDisp(r.runKm)} onChange={(e) => setR((x) => ({ ...x, runKm: Math.max(0, fromDisp(Number(e.target.value))) }))} />
@@ -310,7 +311,7 @@ function RegimenForm({ s }: { s: PlayerSnapshot }) {
           {pr.enabled ? (
             <>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <Field label="Push-up/sit-up step" htmlFor="pg-rep">
+                <Field label="Push-up/sit-up/squat step" htmlFor="pg-rep">
                   <Input id="pg-rep" type="number" min={0} max={50} value={pr.repStep} onChange={(e) => setPr({ repStep: Math.max(0, Math.round(Number(e.target.value))) })} />
                 </Field>
                 <Field label="Pull-up step" htmlFor="pg-pull">
@@ -329,6 +330,9 @@ function RegimenForm({ s }: { s: PlayerSnapshot }) {
                 </Field>
                 <Field label="Goal: sit-ups" htmlFor="pg-gsu">
                   <Input id="pg-gsu" type="number" min={0} max={1000} value={pr.goal.situps} onChange={(e) => setGoal({ situps: Math.max(0, Math.round(Number(e.target.value))) })} />
+                </Field>
+                <Field label="Goal: squats" htmlFor="pg-gsq">
+                  <Input id="pg-gsq" type="number" min={0} max={1000} value={pr.goal.squats} onChange={(e) => setGoal({ squats: Math.max(0, Math.round(Number(e.target.value))) })} />
                 </Field>
                 <Field label="Goal: pull-ups" htmlFor="pg-gpl">
                   <Input id="pg-gpl" type="number" min={0} max={1000} value={pr.goal.pullups} onChange={(e) => setGoal({ pullups: Math.max(0, Math.round(Number(e.target.value))) })} />

@@ -162,7 +162,7 @@ function weekStartOf(date: string): string {
   return d.toISOString().slice(0, 10);
 }
 
-const SET_ACTIVITIES = new Set(["pushups", "situps", "pullups"]);
+const SET_ACTIVITIES = new Set(["pushups", "situps", "squats", "pullups"]);
 
 /** One-tap logging for rep-based objectives; runs take distance and time. */
 const KM_PER_MI = 1.609344;

@@ -98,7 +98,7 @@ export function TrialRunner({ initial, onExit }: { initial: TrialView; onExit: (
   );
 
   async function abandon() {
-    if (view.status === "active" && !confirm("Leave this trial? It won't be scored. There's no penalty.")) return;
+    if (view.status === "active" && !confirm("Leave this trial? It won't be scored, and abandoning a trial costs a little INT XP.")) return;
     if (view.status === "active") await call({ action: "abandon", sessionId: view.id }).catch(() => null);
     onExit();
   }

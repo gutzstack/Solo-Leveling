@@ -17,6 +17,9 @@ import {
 } from "../../domain/trials";
 import type { TrialAttempt } from "../../game/rows";
 import type { Database, DataClient } from "../db/types";
+import { flatPenalty, TRIAL_ABANDON_PENALTY } from "../../domain/regimen";
+import { localDate } from "../../domain/dates";
+import { applyPenalty, penaltiesEnabled } from "./penalty";
 import { GameError } from "./service";
 
 /**
@@ -103,9 +106,26 @@ export class TrialService {
     const s = rows[0] ?? null;
     if (s && this.clock().getTime() - Date.parse(s.started_at) > STALE_MINUTES * 60_000) {
       await this.svc.update("trial_sessions", { id: s.id, user_id: this.userId }, { status: "abandoned", completed_at: this.clock().toISOString() });
+      await this.penalizeAbandon(s);
       return null;
     }
     return s;
+  }
+
+  /** Walking away from a trial (or letting it go stale) costs a little INT XP. */
+  private async penalizeAbandon(s: SessionRow) {
+    if (!(await penaltiesEnabled(this.db))) return;
+    const profile = (await this.svc.select<{ difficulty: "casual" | "normal" | "hard" | "nightmare"; timezone: string }>("profiles", { eq: { user_id: this.userId } }))[0];
+    if (!profile) return;
+    await applyPenalty(this.svc, this.userId, {
+      amount: flatPenalty(TRIAL_ABANDON_PENALTY, profile.difficulty),
+      attribute: "INT",
+      sourceType: "trial_abandoned",
+      sourceId: s.id,
+      reason: `Abandoned a ${s.kind} trial`,
+      key: `penalty:trial:${s.id}`,
+      day: localDate(this.clock(), profile.timezone),
+    });
   }
 
   private async save(s: SessionRow, patch: Partial<SessionRow>) {
@@ -124,7 +144,10 @@ export class TrialService {
         return { view: await this.start(req.kind, req.deck), completedId: null };
       case "abandon": {
         const s = await this.session(req.sessionId);
-        if (s.status === "active") await this.save(s, { status: "abandoned", completed_at: this.clock().toISOString() });
+        if (s.status === "active") {
+          await this.save(s, { status: "abandoned", completed_at: this.clock().toISOString() });
+          await this.penalizeAbandon(s);
+        }
         return { view: null, completedId: null };
       }
       case "answer":
@@ -272,6 +295,7 @@ export class TrialService {
     if (elapsed < 10) throw new GameError("Too fast. The sprint runs for 60 seconds.");
     if (elapsed > SPEED_SECONDS + 20) {
       await this.save(s, { status: "abandoned", completed_at: new Date(now).toISOString() });
+      await this.penalizeAbandon(s);
       throw new GameError("Time limit exceeded, so this attempt wasn't scored. Start a new Speed Trial.", 409);
     }
     const problems = speedProblems(s.seed);

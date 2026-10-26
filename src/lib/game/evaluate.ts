@@ -192,10 +192,12 @@ export function planAwards(data: GameData, ev: Evaluation): PlannedAward[] {
     }
   }
   // Daily all-complete bonus
-  const todays = data.quests.filter((q) => q.kind === "daily" && q.period_start === data.today && q.status !== "offered");
+  const todays = data.quests.filter((q) => q.kind === "daily" && q.period_start === data.today && q.status !== "offered" && q.status !== "exempt");
   const completingNow = new Set(out.filter((a): a is Extract<PlannedAward, { type: "quest_complete" }> => a.type === "quest_complete").map((a) => a.quest.id));
   if (todays.length > 0 && todays.every((q) => q.status === "completed" || completingNow.has(q.id))) {
-    if (!data.xp.some((x) => x.idempotency_key === `daily_all:${data.today}`)) out.push({ type: "daily_all_complete", date: data.today, xp: ev.cfg.dailyAllComplete });
+    const reversed = new Set(data.xp.filter((x) => x.reverses_id).map((x) => x.reverses_id));
+    const k = `daily_all:${data.today}`;
+    if (!data.xp.some((x) => x.kind !== "reversal" && (x.idempotency_key === k || x.idempotency_key.startsWith(`${k}:`)) && !reversed.has(x.id))) out.push({ type: "daily_all_complete", date: data.today, xp: ev.cfg.dailyAllComplete });
   }
   // Skills: sequential within a line, so several tiers can unlock in one pass.
   const unlocked = new Set(data.skillUnlocks.map((u) => u.skill_code));

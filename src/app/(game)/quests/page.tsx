@@ -1,5 +1,5 @@
 "use client";
-import { Check, Clock, Lock, Plus, Trash2 } from "lucide-react";
+import { BedDouble, Check, Clock, Lock, Plus, Skull, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
@@ -10,6 +10,7 @@ import { newKey } from "@/lib/client/api";
 import { useCommand, useSnapshot } from "@/lib/client/use-game";
 import { ACTIVITIES } from "@/lib/domain/activities";
 import { ATTRIBUTES } from "@/lib/domain/attributes";
+import { CATEGORY_INFO, QUEST_CATEGORIES, resolveRegimen, type QuestCategory } from "@/lib/domain/regimen";
 import { TITLE_BY_CODE } from "@/lib/domain/titles";
 import { displayUnit, parseDisplayInput } from "@/lib/domain/units";
 import type { AttributeCode, UnitKind } from "@/lib/domain/types";
@@ -20,13 +21,14 @@ export default function QuestsPage() {
   const { data } = useSnapshot();
   const [showHistory, setShowHistory] = useState(false);
   if (!data) return null;
-  const visible = (q: QuestView) => showHistory || q.status === "active" || q.status === "offered" || (q.status === "completed" && (q.period_end === null || q.period_end >= data.today));
+  const zone = data.quests.find((q) => q.kind === "penalty" && q.status === "active") ?? null;
+  const visible = (q: QuestView) => showHistory || q.status === "active" || q.status === "offered" || ((q.status === "completed" || q.status === "exempt") && (q.period_end === null || q.period_end >= data.today));
   const by = (k: QuestView["kind"]) => data.quests.filter((q) => q.kind === k).filter(visible).sort((a, b) => order(a) - order(b) || b.period_start.localeCompare(a.period_start));
   const tabs: { id: string; label: string; quests: QuestView[]; empty: string }[] = [
-    { id: "daily", label: "Daily", quests: by("daily"), empty: "Daily quests appear each morning (your local time)." },
+    { id: "daily", label: "Daily", quests: [...by("penalty"), ...by("daily")], empty: "Daily quests appear each morning (your local time)." },
     { id: "weekly", label: "Weekly", quests: by("weekly"), empty: "Weekly quests reset every Monday." },
     { id: "main", label: "Main Story", quests: by("main"), empty: "Story arcs follow the categories you track." },
-    { id: "emergency", label: "Emergency", quests: by("emergency"), empty: "No emergency gates are open. They are optional and time-limited, and declining has no penalty." },
+    { id: "emergency", label: "Emergency", quests: by("emergency"), empty: "No emergency gates are open. They are optional and time-limited: declining is free, but an accepted gate that closes unfinished costs XP." },
     { id: "custom", label: "Custom", quests: by("custom"), empty: "Create your own quests with measurable objectives." },
   ];
   return (
@@ -41,6 +43,7 @@ export default function QuestsPage() {
           </Button>
         </CustomQuestDialog>
       </PageHeader>
+      {zone ? <PenaltyBanner q={zone} /> : null}
       <Tabs defaultValue="daily">
         <TabsList className="mb-4">
           {tabs.map((t) => (
@@ -51,7 +54,9 @@ export default function QuestsPage() {
         </TabsList>
         {tabs.map((t) => (
           <TabsContent key={t.id} value={t.id}>
-            {t.quests.length ? (
+            {t.id === "daily" && t.quests.length ? (
+              <DailyBoard quests={t.quests} today={data.today} />
+            ) : t.quests.length ? (
               <div className={cn("grid gap-4", t.id === "main" ? "lg:grid-cols-2" : "md:grid-cols-2 xl:grid-cols-3")}>
                 {t.quests.map((q) => (q.kind === "main" ? <MainQuestCard key={q.id} q={q} /> : <QuestCard key={q.id} q={q} />))}
               </div>
@@ -66,7 +71,147 @@ export default function QuestsPage() {
 }
 
 function order(q: QuestView) {
-  return { offered: 0, active: 1, completed: 2, expired: 3, abandoned: 4 }[q.status];
+  return { offered: 0, active: 1, completed: 2, exempt: 3, failed: 4, expired: 5, abandoned: 6 }[q.status];
+}
+
+function PenaltyBanner({ q }: { q: QuestView }) {
+  return (
+    <div className="mb-4 flex items-start gap-3 rounded-xl border border-red-500/60 bg-red-950/40 px-4 py-3 light:bg-red-50">
+      <Skull className="mt-0.5 size-5 shrink-0 text-red-400" />
+      <div className="min-w-0 text-sm">
+        <p className="font-display text-[10px] tracking-[0.25em] text-red-400">[PENALTY ZONE ACTIVE]</p>
+        <p className="text-fg">Finish yesterday&apos;s unfinished work before midnight, on top of today&apos;s quests. Failure costs {q.config.penaltyXp ?? 0} XP.</p>
+      </div>
+    </div>
+  );
+}
+
+/** Today's daily quests grouped by category; any Penalty Zone sits on top. */
+function DailyBoard({ quests, today }: { quests: QuestView[]; today: string }) {
+  const { data } = useSnapshot();
+  const cmd = useCommand();
+  const penalty = quests.filter((q) => q.kind === "penalty");
+  const daily = quests.filter((q) => q.kind === "daily");
+  const groups: QuestCategory[] = [...QUEST_CATEGORIES];
+  const uncategorized = daily.filter((q) => !q.config.category);
+  const regimen = resolveRegimen(data?.settings.regimen);
+  const passesUsed = new Set((data?.quests ?? []).filter((q) => q.config.recoveryPass && q.period_start >= weekStartOf(today)).map((q) => q.period_start)).size;
+  const physicalOpen = daily.some((q) => q.config.category === "physical" && q.status === "active" && q.period_start === today);
+  return (
+    <div className="space-y-6">
+      {penalty.length ? (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {penalty.map((q) => (
+            <QuestCard key={q.id} q={q} />
+          ))}
+        </div>
+      ) : null}
+      {groups.map((c) => {
+        const qs = daily.filter((q) => q.config.category === c);
+        if (!qs.length) return null;
+        return (
+          <section key={c} aria-label={CATEGORY_INFO[c].name}>
+            <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+              <div>
+                <h2 className="sys-title text-sm text-fg">{CATEGORY_INFO[c].name}</h2>
+                <p className="text-xs text-faint">{CATEGORY_INFO[c].blurb}</p>
+              </div>
+              {c === "physical" && physicalOpen && regimen.recoveryPassesPerWeek > 0 ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={cmd.isPending || passesUsed >= regimen.recoveryPassesPerWeek}
+                  onClick={() => confirm("Use a recovery pass? Today's physical quests are waived with no XP and no penalty. Use it for illness, injury or a needed rest day.") && cmd.mutate({ type: "use_recovery_pass" })}
+                >
+                  <BedDouble /> Recovery pass ({Math.max(0, regimen.recoveryPassesPerWeek - passesUsed)} left this week)
+                </Button>
+              ) : null}
+            </div>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {qs.map((q) => (
+                <QuestCard key={q.id} q={q} />
+              ))}
+            </div>
+          </section>
+        );
+      })}
+      {uncategorized.length ? (
+        <section aria-label="Other">
+          <h2 className="sys-title mb-2 text-sm text-fg">Other</h2>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {uncategorized.map((q) => (
+              <QuestCard key={q.id} q={q} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+      {cmd.error ? <p className="text-xs text-red-300 light:text-red-700">{cmd.error.message}</p> : null}
+    </div>
+  );
+}
+
+function weekStartOf(date: string): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+  return d.toISOString().slice(0, 10);
+}
+
+const SET_ACTIVITIES = new Set(["pushups", "situps", "pullups"]);
+
+/** One-tap logging for rep-based objectives; runs take distance and time. */
+function QuickLog({ activity, today }: { activity: string; today: string }) {
+  const cmd = useCommand();
+  const [custom, setCustom] = useState("");
+  const [km, setKm] = useState("");
+  const [min, setMin] = useState("");
+  const log = (quantity: number, durationMin: number | null = null) => cmd.mutate({ type: "log_activity", activity, quantity, durationMin, occurredOn: today, idempotencyKey: newKey(activity) });
+  if (SET_ACTIVITIES.has(activity))
+    return (
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        {[10, 25].map((n) => (
+          <Button key={n} type="button" size="sm" variant="outline" className="h-7 px-2 text-xs" disabled={cmd.isPending} onClick={() => log(n)}>
+            +{n}
+          </Button>
+        ))}
+        <form
+          className="flex items-center gap-1.5"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const n = Math.round(Number(custom));
+            if (n > 0) log(n, null);
+            setCustom("");
+          }}
+        >
+          <Input aria-label="Reps" type="number" inputMode="numeric" min={1} max={1000} className="h-7 w-20 text-xs" placeholder="reps" value={custom} onChange={(e) => setCustom(e.target.value)} />
+          <Button type="submit" size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={cmd.isPending || !custom}>
+            Log
+          </Button>
+        </form>
+        {cmd.error ? <span className="text-xs text-red-300 light:text-red-700">{cmd.error.message}</span> : null}
+      </div>
+    );
+  if (activity === "run")
+    return (
+      <form
+        className="mt-1.5 flex flex-wrap items-center gap-1.5"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const d = Number(km);
+          const m = Number(min);
+          if (d > 0 && m > 0) log(Math.round(d * 100) / 100, m);
+          setKm("");
+          setMin("");
+        }}
+      >
+        <Input aria-label="Distance in km" type="number" inputMode="decimal" step="0.01" min={0.1} className="h-7 w-20 text-xs" placeholder="km" value={km} onChange={(e) => setKm(e.target.value)} />
+        <Input aria-label="Minutes" type="number" inputMode="numeric" min={1} className="h-7 w-20 text-xs" placeholder="min" value={min} onChange={(e) => setMin(e.target.value)} />
+        <Button type="submit" size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={cmd.isPending || !km || !min}>
+          Log run
+        </Button>
+        {cmd.error ? <span className="text-xs text-red-300 light:text-red-700">{cmd.error.message}</span> : null}
+      </form>
+    );
+  return null;
 }
 
 function Countdown({ deadline }: { deadline: string }) {
@@ -90,24 +235,31 @@ function Countdown({ deadline }: { deadline: string }) {
 function QuestCard({ q }: { q: QuestView }) {
   const cmd = useCommand();
   const done = q.status === "completed";
-  const inactive = q.status === "expired" || q.status === "abandoned";
+  const inactive = q.status === "expired" || q.status === "abandoned" || q.status === "exempt";
+  const failed = q.status === "failed";
+  const zone = q.kind === "penalty";
+  const fine = q.config.penaltyXp ?? 0;
+  const today = q.period_start === q.period_end ? q.period_start : null;
   return (
-    <Panel className={cn(done && "border-emerald-400/40", inactive && "opacity-60", q.status === "offered" && "pulse-ring")} bodyClassName="space-y-3">
+    <Panel className={cn(done && "border-emerald-400/40", inactive && "opacity-60", failed && "border-red-500/50 opacity-75", zone && q.status === "active" && "border-red-500/70", q.status === "offered" && "pulse-ring")} bodyClassName="space-y-3">
       <div className="flex items-start gap-3">
         <RankBadge rank={q.difficulty} size="sm" label={`Difficulty ${q.difficulty}`} />
         <div className="min-w-0 flex-1">
-          <p className="font-display text-[9px] tracking-[0.2em] text-accent-2">{q.kind === "emergency" ? "[EMERGENCY QUEST]" : `[${q.kind.toUpperCase()} QUEST]`}</p>
+          <p className={cn("font-display text-[9px] tracking-[0.2em]", zone ? "text-red-400" : "text-accent-2")}>{zone ? "[PENALTY QUEST]" : q.kind === "emergency" ? "[EMERGENCY QUEST]" : `[${q.kind.toUpperCase()} QUEST]`}</p>
           <h3 className="font-semibold leading-snug text-fg">{q.title}</h3>
         </div>
-        <span className="font-mono text-xs text-accent">+{q.xp_reward} XP</span>
+        {q.xp_reward ? <span className="font-mono text-xs text-accent">+{q.xp_reward} XP</span> : null}
       </div>
       {q.description ? <p className="text-sm text-dim">{q.description}</p> : null}
       <div className="flex flex-wrap gap-1.5">
         {q.attribute_code ? <Pill>{q.attribute_code}</Pill> : null}
         {q.deadline && q.status === "active" ? <Countdown deadline={q.deadline} /> : null}
         {done ? <Pill className="border-emerald-400/50 text-emerald-300 light:text-emerald-800">completed</Pill> : null}
+        {q.status === "active" && q.config.penalized && fine ? <Pill className="border-red-500/50 text-red-300 light:text-red-700">fail: −{fine} XP</Pill> : null}
+        {failed ? <Pill className="border-red-500/60 text-red-300 light:text-red-700">failed{fine ? ` · −${fine} XP` : ""}</Pill> : null}
+        {q.status === "exempt" ? <Pill>waived (recovery pass)</Pill> : null}
         {q.status === "expired" ? <Pill>faded (no penalty)</Pill> : null}
-        {q.status === "abandoned" ? <Pill>declined</Pill> : null}
+        {q.status === "abandoned" ? <Pill>{q.config.penalized && q.kind !== "emergency" ? `abandoned · −${fine} XP` : "declined"}</Pill> : null}
         {q.period_end && q.kind !== "emergency" ? <Pill>{q.period_start === q.period_end ? q.period_start : `${q.period_start} → ${q.period_end}`}</Pill> : null}
       </div>
       <ul className="space-y-2">
@@ -125,6 +277,7 @@ function QuestCard({ q }: { q: QuestView }) {
               <span className="font-mono text-[11px] text-faint">{o.progress.display}</span>
             </div>
             <XpBar value={o.progress.fraction * 100} max={100} thin label={o.title} className="mt-1" />
+            {q.status === "active" && today && !o.progress.done && "activities" in o.tracker && o.tracker.activities.length === 1 ? <QuickLog activity={o.tracker.activities[0]} today={today} /> : null}
           </li>
         ))}
       </ul>
@@ -139,7 +292,7 @@ function QuestCard({ q }: { q: QuestView }) {
         </div>
       ) : null}
       {q.status === "active" && (q.kind === "custom" || q.kind === "emergency") ? (
-        <Button size="sm" variant="ghost" onClick={() => confirm("Abandon this quest? There is no penalty.") && cmd.mutate({ type: "abandon_quest", questId: q.id })}>
+        <Button size="sm" variant="ghost" onClick={() => confirm(q.config.penalized && fine ? `Abandon this quest? It costs ${fine} XP.` : "Abandon this quest?") && cmd.mutate({ type: "abandon_quest", questId: q.id })}>
           Abandon
         </Button>
       ) : null}

@@ -69,7 +69,7 @@ export function totalXpForLevel(level: number, base = DEFAULT_XP_CONFIG.levelBas
 
 // ─────────────────────────────── Ledger ───────────────────────────────
 
-export type XpKind = "effort" | "performance" | "quest" | "achievement" | "skill" | "dungeon" | "milestone" | "reversal";
+export type XpKind = "effort" | "performance" | "quest" | "achievement" | "skill" | "dungeon" | "milestone" | "reversal" | "penalty";
 
 export interface XpTransactionRow {
   id: string;
@@ -105,7 +105,10 @@ export function sumLedger(rows: readonly XpTransactionRow[]): XpTotals {
     const attr = origin?.attribute_code ?? r.attribute_code;
     if (attr) totals.byAttribute[attr] = (totals.byAttribute[attr] ?? 0) + r.amount;
   }
+  // Penalties can't push XP below zero.
   totals.total = Math.max(0, totals.total);
+  totals.effort = Math.max(0, totals.effort);
+  for (const k of Object.keys(totals.byAttribute)) totals.byAttribute[k] = Math.max(0, totals.byAttribute[k]);
   return totals;
 }
 

@@ -133,6 +133,16 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     [60, "Master of Habits", "legendary", "master_of_habits"],
     [100, "Perfect Century", "legendary"],
   ]),
+  ...family("Quests", "Dumbbell", "regimen_days", (t) => `Complete the daily training regimen on ${t} day${t === 1 ? "" : "s"}.`, [
+    [1, "Preparations Begin", "common"],
+    [7, "A Week of Preparation", "uncommon"],
+    [30, "Thirty Days of Hell", "epic"],
+    [100, "The Weak No Longer", "legendary"],
+  ]),
+  ...family("Quests", "Skull", "quests_penalty_completed", (t) => (t === 1 ? "Survive the Penalty Zone." : `Survive the Penalty Zone ${t} times.`), [
+    [1, "Penalty Zone Survivor", "uncommon"],
+    [5, "Back From the Brink", "rare"],
+  ]),
   ...family("Quests", "CalendarRange", "quests_weekly_completed", (t) => `Complete ${t} weekly quests.`, [
     [1, "Week Conquered", "common"],
     [10, "Weekly Warden", "uncommon"],

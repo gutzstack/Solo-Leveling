@@ -81,6 +81,17 @@ try {
     await page.keyboard.press("Escape");
   });
 
+  await step("quest board: categories and quick-logging reps", async () => {
+    await page.goto(BASE + "/quests");
+    await page.getByRole("heading", { name: "Physical" }).waitFor({ timeout: 20000 });
+    await page.getByRole("heading", { name: "Intellectual" }).waitFor();
+    const regimen = page.locator("section").filter({ hasText: "PREPARATIONS TO BECOME POWERFUL" }).last();
+    const pushups = regimen.locator("li").filter({ hasText: "100 push-ups" });
+    await pushups.getByRole("button", { name: "+25" }).click();
+    await pushups.getByText("25 / 100").waitFor({ timeout: 15000 });
+    await page.screenshot({ path: `${OUT}/05-quest-board.png`, fullPage: true });
+  });
+
   await step("reasoning trial: complete 12 items", async () => {
     await page.goto(BASE + "/trials");
     await page.getByRole("heading", { name: "Reasoning Trial" }).waitFor({ timeout: 20000 });

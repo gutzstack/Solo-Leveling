@@ -182,10 +182,11 @@ export default function GameLayout({ children }: { children: React.ReactNode }) 
 }
 
 function DailyLogin({ event, name, onClose }: { event: Extract<GameEvent, { type: "daily_login" }>; name: string; onClose: () => void }) {
+  const pen = event.penalties;
   useEffect(() => {
-    const t = setTimeout(onClose, 6500);
+    const t = setTimeout(onClose, pen ? 12000 : 6500);
     return () => clearTimeout(t);
-  }, [onClose]);
+  }, [onClose, pen]);
   return (
     <motion.div className="fixed inset-0 z-[75] flex cursor-pointer items-center justify-center bg-black/70 p-6 backdrop-blur-md" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} role="dialog" aria-label="Daily login">
       <motion.div className="sys-panel sys-panel-glow scanlines relative w-full max-w-sm overflow-hidden p-6 text-center" initial={{ scale: 0.9, y: 16 }} animate={{ scale: 1, y: 0 }}>
@@ -195,6 +196,15 @@ function DailyLogin({ event, name, onClose }: { event: Extract<GameEvent, { type
         <p className="mt-1 font-display text-5xl font-black text-sky-300 text-glow">{event.streak}</p>
         <p className="font-display text-[10px] tracking-[0.25em] text-dim">DAY LOGIN STREAK</p>
         <p className="mt-4 text-sm text-dim">{event.newQuests ? `${event.newQuests} new daily quests have appeared.` : "Your quest board is ready."}</p>
+        {pen ? (
+          <div className="mt-4 rounded-lg border border-red-500/60 bg-red-950/40 p-3 text-left light:bg-red-50">
+            <p className="font-display text-[10px] tracking-[0.3em] text-red-400">[PENALTY]</p>
+            {pen.failed.length ? <p className="mt-1 text-sm text-fg">{pen.failed.length} quest{pen.failed.length === 1 ? "" : "s"} failed: {pen.failed.slice(0, 4).join(", ")}{pen.failed.length > 4 ? "…" : ""}</p> : null}
+            {pen.zoneFailed ? <p className="mt-1 text-sm text-fg">You failed the Penalty Zone.</p> : null}
+            {pen.xp ? <p className="mt-1 font-mono text-sm text-red-300 light:text-red-700">−{pen.xp} XP</p> : null}
+            {pen.zone ? <p className="mt-2 text-sm text-red-300 light:text-red-700">The Penalty Zone is open. Finish yesterday&apos;s work before midnight.</p> : null}
+          </div>
+        ) : null}
         <p className="mt-4 text-xs text-faint">Tap to continue</p>
       </motion.div>
     </motion.div>

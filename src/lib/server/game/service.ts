@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { ACTIVITY_BY_TYPE, qualifiesForXp } from "../../domain/activities";
 import { ATTRIBUTE_BY_CODE } from "../../domain/attributes";
-import { daysBetween, localDate, type ISODate } from "../../domain/dates";
+import { addDays, daysBetween, localDate, weekStart, type ISODate } from "../../domain/dates";
 import { activeSecondsNow, canClear, creditedMinutes, DUNGEON_BY_CODE, DUNGEON_CLEAR_XP, DUNGEON_DAILY_BONUS_CAP, RETREAT_CREDIT_MINUTES } from "../../domain/dungeons";
 import { METRIC_BY_ID, type MetricDef } from "../../domain/metrics";
+import { DUNGEON_RETREAT_PENALTY, flatPenalty, MAX_BACKFILL_DAYS, PENALTY_ZONE_FAIL_FACTOR, questPenalty, resolveRegimen } from "../../domain/regimen";
 import { compareRanks } from "../../domain/ranks";
 import { TITLE_BY_CODE } from "../../domain/titles";
 import type { AttributeCode, Rank } from "../../domain/types";
@@ -11,10 +12,12 @@ import { evaluatePersonalRecord, findLikelyDuplicate, planActivityXp, planMetric
 import { CommandSchema, ImportSchema, type Command, type GameEvent } from "../../game/commands";
 import { evaluate, planAwards, type Evaluation } from "../../game/evaluate";
 import { customMetricDef } from "../../game/metric-state";
-import { generateDailyQuests, generateEmergencyQuests, generateWeeklyQuests, mainQuestDrafts, type QuestDraft } from "../../game/quest-templates";
+import { objectiveProgress } from "../../game/quest-progress";
+import { generateDailyQuests, generateEmergencyQuests, generateWeeklyQuests, mainQuestDrafts, penaltyZoneDraft, type QuestDraft } from "../../game/quest-templates";
 import { computeStats } from "../../game/stats";
 import type { ActivityRow, CustomMetricRow, DungeonSessionRow, GameData, MetricEntryRow, ObjectiveRow, ProfileRow, QuestRow, SettingsRow, TrialResultRow } from "../../game/rows";
 import { UniqueViolationError, type Database, type DataClient } from "../db/types";
+import { applyPenalty, penaltiesEnabled } from "./penalty";
 import { buildSnapshot, type PlayerSnapshot } from "./snapshot";
 
 export class GameError extends Error {
@@ -138,6 +141,35 @@ export class GameService {
     return rows.length > 0;
   }
 
+  /** Idempotency key for an award that may be re-earned after its earlier award was reversed. */
+  private rekey(data: GameData, key: string, sourceId: string): string {
+    const n = data.xp.filter((x) => x.kind === "reversal" && x.source_id === sourceId).length;
+    return n ? `${key}:${n}` : key;
+  }
+
+  /**
+   * After a log is deleted, re-opens any still-running quest it had completed: the completion XP
+   * (and the all-dailies bonus) is reversed, and the quest can be earned again, or failed.
+   */
+  private async revalidateQuests() {
+    const data = await this.load();
+    const stats = computeStats(data);
+    const ev = evaluate(data);
+    const current = (id: string) => ev.metrics.find((m) => m.id === id)?.current?.value ?? null;
+    for (const q of data.quests) {
+      if (q.kind === "main" || q.status !== "completed" || (q.period_end !== null && q.period_end < data.today)) continue;
+      const objs = data.objectives.filter((o) => o.quest_id === q.id);
+      const progress = objs.map((o) => ({ o, done: o.tracker.type === "manual" || o.tracker.type === "metric_reach" ? Boolean(o.completed_at) : objectiveProgress({ ...o, completed_at: null }, q, data, stats, current).done }));
+      if (progress.every((x) => x.done)) continue;
+      await this.reverseFor(data, q.id, "Quest progress removed");
+      if (q.kind === "daily") await this.reverseFor(data, `daily_all:${q.period_start}`, "Daily quest re-opened");
+      await this.svc.delete("quest_completions", { quest_id: q.id, user_id: this.userId, chapter: 0 });
+      await this.svc.update("quests", { id: q.id, user_id: this.userId }, { status: "active", completed_at: null });
+      for (const x of progress) if (!x.done && x.o.completed_at) await this.svc.update("quest_objectives", { id: x.o.id, user_id: this.userId }, { completed_at: null });
+      await this.notify("quest", "[QUEST REOPENED]", `${q.title}: a deleted log means it's no longer complete.`);
+    }
+  }
+
   /** Reverse every unreversed transaction attached to a deleted source. */
   private async reverseFor(data: GameData, sourceId: string, reason: string): Promise<number> {
     const reversed = new Set(data.xp.filter((x) => x.reverses_id).map((x) => x.reverses_id));
@@ -175,32 +207,99 @@ export class GameService {
     return created;
   }
 
-  /** Generates today's/this week's quests, the story arcs and emergency offers; expires stale quests. */
-  async ensureQuests(data: GameData): Promise<number> {
+  private async penalize(data: GameData, p: { amount: number; attribute: AttributeCode | null; sourceType: string; sourceId: string | null; reason: string; key: string }): Promise<boolean> {
+    return applyPenalty(this.svc, this.userId, { ...p, day: data.today });
+  }
+
+  /**
+   * Fails or expires quests whose time is up, then generates today's/this week's quests, the story
+   * arcs, emergency offers and, after failed dailies, the Penalty Zone. Days the player missed
+   * entirely (up to a week) get a board too, which fails, so staying away isn't a way out.
+   */
+  async ensureQuests(data: GameData, events: GameEvent[] = []): Promise<number> {
     if (!data.profile.onboarded_at) return 0;
     const cfg = resolveXpConfig(data.settings.xp_config);
+    const regimen = resolveRegimen(data.settings.regimen);
     const p = data.profile;
-    const have = new Set(data.quests.map((q) => `${q.template_code}|${q.period_start}`));
+    const penal = await penaltiesEnabled(this.db);
+    const mark = (ds: QuestDraft[]) => (penal ? ds.map((d) => (d.kind === "main" ? d : { ...d, config: { ...d.config, penalized: true, penaltyXp: d.config.penaltyXp ?? questPenalty(d.xp_reward, p.difficulty) } })) : ds);
+    let have = new Set(data.quests.map((q) => `${q.template_code}|${q.period_start}`));
     const missing = (ds: QuestDraft[]) => ds.filter((d) => !have.has(`${d.template_code}|${d.period_start}`));
-    const stats = computeStats(data);
-    const baseline = { strength_prs: stats.counts.strength_prs ?? 0 };
+    const baseline = () => ({ strength_prs: computeStats(data).counts.strength_prs ?? 0 });
     let created = 0;
-    const dailies = missing(generateDailyQuests(p, data.today, cfg, this.userId));
-    created += await this.insertQuestDrafts(dailies, baseline);
-    created += await this.insertQuestDrafts(missing(generateWeeklyQuests(p, data.today, cfg)), baseline);
-    created += await this.insertQuestDrafts(missing(mainQuestDrafts(p, data.today, cfg)), baseline);
-    created += await this.insertQuestDrafts(missing(generateEmergencyQuests(p, data.today, data.now, cfg, this.userId)), baseline);
+
+    // Missed days
+    if (penal) {
+      const last = data.quests.filter((q) => q.kind === "daily" && q.config?.penalized && q.period_start < data.today).reduce<ISODate | null>((m, q) => (!m || q.period_start > m ? q.period_start : m), null);
+      if (last) {
+        const from = addDays(data.today, -MAX_BACKFILL_DAYS) > addDays(last, 1) ? addDays(data.today, -MAX_BACKFILL_DAYS) : addDays(last, 1);
+        for (let d = from; d < data.today; d = addDays(d, 1)) created += await this.insertQuestDrafts(mark(missing(generateDailyQuests(p, d, cfg, this.userId, regimen))), baseline());
+        if (created) {
+          data = await this.load();
+          have = new Set(data.quests.map((q) => `${q.template_code}|${q.period_start}`));
+        }
+      }
+    }
+
+    // Time's up
+    const yesterday = addDays(data.today, -1);
+    const stale = data.quests.filter(
+      (q) =>
+        ((q.status === "active" || q.status === "offered") && (q.kind === "daily" || q.kind === "weekly" || q.kind === "penalty") && q.period_end !== null && q.period_end < data.today) ||
+        (q.status === "offered" && q.period_end !== null && q.period_end < data.today) ||
+        (q.status === "active" && (q.kind === "emergency" || q.kind === "custom") && q.deadline !== null && Date.parse(q.deadline) < data.now.getTime()),
+    );
+    const failedYesterday: Parameters<typeof penaltyZoneDraft>[1] = [];
+    let lost = 0;
+    const failedTitles: string[] = [];
+    if (stale.length) {
+      const views = new Map(evaluate(data).quests.map((q) => [q.id, q]));
+      for (const q of stale) {
+        const view = views.get(q.id);
+        // Finished but not yet recorded (e.g. a back-dated log): the progression loop completes it.
+        if (q.status === "active" && view?.allDone) continue;
+        if (!(penal && q.status === "active" && q.config?.penalized)) {
+          await this.svc.update("quests", { id: q.id, user_id: this.userId }, { status: "expired" });
+          continue;
+        }
+        await this.svc.update("quests", { id: q.id, user_id: this.userId }, { status: "failed" });
+        const amount = q.config.penaltyXp ?? questPenalty(q.xp_reward, p.difficulty);
+        const zone = q.kind === "penalty";
+        if (await this.penalize(data, { amount, attribute: q.attribute_code, sourceType: zone ? "penalty_zone" : "quest_failed", sourceId: q.id, reason: zone ? "Penalty Zone failed" : `Quest failed: ${q.title}`, key: `penalty:${q.id}` })) {
+          lost += amount;
+          failedTitles.push(q.title);
+        }
+        if (q.kind === "daily" && q.period_end === yesterday && view)
+          failedYesterday.push({ quest: q, remaining: view.objectives.filter((o) => !o.progress.done).map((o) => ({ title: o.title, tracker: o.tracker, amount: o.target - o.progress.value })) });
+      }
+    }
+    if (failedTitles.length) {
+      const body = `${failedTitles.length} quest${failedTitles.length === 1 ? "" : "s"} failed: ${failedTitles.slice(0, 4).join(", ")}${failedTitles.length > 4 ? "…" : ""}. −${lost} XP.`;
+      events.push({ type: "penalty", title: "Quests failed", body, xp: lost, zone: false });
+      await this.notify("penalty", "[PENALTY]", body);
+    }
+
+    // Today's board
+    const todays = mark(generateDailyQuests(p, data.today, cfg, this.userId, regimen));
+    const dailies = missing(todays);
+    created += await this.insertQuestDrafts(dailies, baseline());
+    created += await this.insertQuestDrafts(mark(missing(generateWeeklyQuests(p, data.today, cfg))), baseline());
+    created += await this.insertQuestDrafts(missing(mainQuestDrafts(p, data.today, cfg)), baseline());
+    created += await this.insertQuestDrafts(mark(missing(generateEmergencyQuests(p, data.today, data.now, cfg, this.userId))), baseline());
     if (dailies.length) await this.notify("quests", "[SYSTEM NOTIFICATION]", "New daily quests have appeared.", { date: data.today });
 
-    // Expire without penalty.
-    for (const q of data.quests) {
-      const stale =
-        ((q.status === "active" || q.status === "offered") && (q.kind === "daily" || q.kind === "weekly") && q.period_end !== null && q.period_end < data.today) ||
-        (q.status === "offered" && q.period_end !== null && q.period_end < data.today) ||
-        (q.status === "active" && (q.kind === "emergency" || q.kind === "custom") && q.deadline !== null && Date.parse(q.deadline) < data.now.getTime());
-      if (stale) await this.svc.update("quests", { id: q.id, user_id: this.userId }, { status: "expired" });
+    // Penalty Zone
+    if (penal && failedYesterday.length) {
+      const failPenalty = PENALTY_ZONE_FAIL_FACTOR * failedYesterday.reduce((a, f) => a + (f.quest.config.penaltyXp ?? questPenalty(f.quest.xp_reward, p.difficulty)), 0);
+      const zone = penaltyZoneDraft(data.today, failedYesterday, todays, failPenalty);
+      if (zone && (await this.insertQuestDrafts(missing([zone]), baseline()))) {
+        created += 1;
+        const body = `Complete yesterday's unfinished work by midnight, on top of today's quests. Failure costs ${failPenalty} XP.`;
+        events.push({ type: "penalty", title: "PENALTY ZONE", body, xp: 0, zone: true });
+        await this.notify("penalty", "[PENALTY ZONE]", body);
+      }
     }
-    return created;
+    return created + stale.length;
   }
 
   // ───────────────────────────── Progression loop ─────────────────────────────
@@ -221,7 +320,7 @@ export class GameService {
             const ins = await this.svc.insertIgnore("quest_completions", { user_id: this.userId, quest_id: a.quest.id, chapter: 0, xp_awarded: a.xp }, ["user_id", "quest_id", "chapter"]);
             await this.svc.update("quests", { id: a.quest.id, user_id: this.userId }, { status: "completed", completed_at: data.now.toISOString() });
             if (ins.length) {
-              await this.award({ amount: a.xp, kind: "quest", attribute: a.quest.attribute_code, sourceType: "quest", sourceId: a.quest.id, reason: `Quest complete: ${a.quest.title}`, key: `quest:${a.quest.id}`, day: data.today });
+              await this.award({ amount: a.xp, kind: "quest", attribute: a.quest.attribute_code, sourceType: "quest", sourceId: a.quest.id, reason: `Quest complete: ${a.quest.title}`, key: this.rekey(data, `quest:${a.quest.id}`, a.quest.id), day: data.today });
               events.push({ type: "quest_complete", title: a.quest.title, kind: a.quest.kind, xp: a.xp });
               await this.notify("quest", "[QUEST COMPLETE]", `${a.quest.title} (+${a.xp} XP)`);
             }
@@ -241,7 +340,7 @@ export class GameService {
             break;
           }
           case "daily_all_complete":
-            if (await this.award({ amount: a.xp, kind: "quest", attribute: "DIS", sourceType: "daily_all", sourceId: null, reason: "All daily quests complete", key: `daily_all:${a.date}`, day: data.today })) {
+            if (await this.award({ amount: a.xp, kind: "quest", attribute: "DIS", sourceType: "daily_all", sourceId: `daily_all:${a.date}`, reason: "All daily quests complete", key: this.rekey(data, `daily_all:${a.date}`, `daily_all:${a.date}`), day: data.today })) {
               events.push({ type: "quest_complete", title: "All daily quests complete", kind: "daily_bonus", xp: a.xp });
               await this.notify("quest", "[DAILY QUESTS CLEARED]", `Every daily quest is complete. Bonus +${a.xp} XP.`);
             }
@@ -349,9 +448,10 @@ export class GameService {
     const cmd = parsed.data;
     let data = await this.load();
     if (cmd.type !== "complete_onboarding" && !data.profile.onboarded_at && cmd.type !== "update_settings") throw new GameError("Complete the awakening (onboarding) first.", 409);
-    if (await this.ensureQuests(data)) data = await this.load();
-    const before = evaluate(data);
     const events: GameEvent[] = [];
+    // The daily-login overlay summarises penalties itself.
+    if (await this.ensureQuests(data, cmd.type === "daily_login" ? [] : events)) data = await this.load();
+    const before = evaluate(data);
     let focusMetric: string | undefined;
 
     switch (cmd.type) {
@@ -364,6 +464,10 @@ export class GameService {
       case "update_settings": {
         const patch: Record<string, unknown> = { ...cmd.settings, updated_at: new Date().toISOString() };
         if (cmd.settings.xp_config) patch.xp_config = resolveXpConfig(cmd.settings.xp_config);
+        if (cmd.settings.regimen) {
+          if (!(await penaltiesEnabled(this.db))) throw new GameError("The daily regimen needs database migration 0003 (supabase/migrations/0003_regimen_penalties.sql). Run it in the Supabase SQL Editor, then try again.", 409);
+          patch.regimen = resolveRegimen(cmd.settings.regimen);
+        }
         await this.u.update("settings", { user_id: this.userId }, patch);
         break;
       }
@@ -386,6 +490,7 @@ export class GameService {
         if (!act) throw new GameError("Activity not found", 404);
         await this.reverseFor(data, act.id, "Activity deleted");
         await this.u.delete("activity_logs", { id: act.id, user_id: this.userId });
+        await this.revalidateQuests();
         break;
       }
       case "set_objective": {
@@ -417,6 +522,27 @@ export class GameService {
         const q = data.quests.find((x) => x.id === cmd.questId);
         if (!q || q.status !== "active" || (q.kind !== "custom" && q.kind !== "emergency")) throw new GameError("Only active custom or emergency quests can be abandoned.");
         await this.svc.update("quests", { id: q.id, user_id: this.userId }, { status: "abandoned" });
+        if (q.config?.penalized && (await penaltiesEnabled(this.db))) {
+          const amount = q.config.penaltyXp ?? questPenalty(q.xp_reward, data.profile.difficulty);
+          if (await this.penalize(data, { amount, attribute: q.attribute_code, sourceType: "quest_abandoned", sourceId: q.id, reason: `Quest abandoned: ${q.title}`, key: `penalty:${q.id}` })) {
+            events.push({ type: "penalty", title: "Quest abandoned", body: `${q.title}: −${amount} XP.`, xp: amount, zone: false });
+            await this.notify("penalty", "[PENALTY]", `Quest abandoned: ${q.title}. −${amount} XP.`);
+          }
+        }
+        break;
+      }
+      case "use_recovery_pass": {
+        if (!(await penaltiesEnabled(this.db))) throw new GameError("Recovery passes need database migration 0003.", 409);
+        const regimen = resolveRegimen(data.settings.regimen);
+        const ws = weekStart(data.today);
+        const usedDays = new Set(data.quests.filter((q) => q.config?.recoveryPass && q.period_start >= ws && q.period_start <= data.today).map((q) => q.period_start));
+        if (usedDays.has(data.today)) throw new GameError("Today's recovery pass is already in use.");
+        if (usedDays.size >= regimen.recoveryPassesPerWeek) throw new GameError(regimen.recoveryPassesPerWeek ? `You have used this week's recovery pass${regimen.recoveryPassesPerWeek > 1 ? "es" : ""}. They reset on Monday.` : "Recovery passes are turned off in your regimen.");
+        const physical = data.quests.filter((q) => q.kind === "daily" && q.period_start === data.today && q.status === "active" && q.config?.category === "physical");
+        if (!physical.length) throw new GameError("There are no open physical quests today.");
+        for (const q of physical) await this.svc.update("quests", { id: q.id, user_id: this.userId }, { status: "exempt", config: { ...q.config, recoveryPass: true } });
+        await this.notify("quest", "[RECOVERY PASS]", "Today's physical quests are waived. Rest well and return stronger.");
+        events.push({ type: "info", title: "Recovery pass used", body: "Today's physical quests are waived without penalty." });
         break;
       }
       case "create_custom_quest":
@@ -470,7 +596,11 @@ export class GameService {
           await this.svc.update("settings", { user_id: this.userId }, { last_login_on: data.today, login_streak: streak });
         }
         const newQuests = data.quests.filter((q) => q.kind === "daily" && q.period_start === data.today).length;
-        events.push({ type: "daily_login", streak, firstToday, newQuests });
+        const penaltyRows = data.xp.filter((x) => x.kind === "penalty" && x.awarded_on === data.today && x.source_type === "quest_failed");
+        const zoneFailed = data.xp.some((x) => x.kind === "penalty" && x.awarded_on === data.today && x.source_type === "penalty_zone");
+        const zone = data.quests.find((q) => q.kind === "penalty" && q.period_start === data.today && q.status === "active");
+        const penalties = penaltyRows.length || zone || zoneFailed ? { xp: -data.xp.filter((x) => x.kind === "penalty" && x.awarded_on === data.today).reduce((a, x) => a + x.amount, 0), failed: penaltyRows.map((x) => x.reason.replace(/^Quest failed: /, "")), zone: Boolean(zone), zoneFailed } : undefined;
+        events.push({ type: "daily_login", streak, firstToday, newQuests, penalties });
         break;
       }
       case "trial_completed": {
@@ -632,7 +762,7 @@ export class GameService {
     if (def.requiresDuration && !(cmd.durationMin && cmd.durationMin > 0)) throw new GameError("Enter how many minutes it took.");
     const candidate = { type: cmd.activity, duration_min: cmd.durationMin, quantity: cmd.quantity, occurred_on: cmd.occurredOn };
     if (data.activities.some((a) => a.idempotency_key === cmd.idempotencyKey)) throw new GameError("This activity was already submitted.", 409);
-    if (!cmd.confirmDuplicate && source === "manual") {
+    if (!cmd.confirmDuplicate && source === "manual" && !def.sets) {
       // occurred_at is stamped with server time at logging, so it doubles as the "logged at" time.
       const dup = findLikelyDuplicate(candidate, data.activities.map((a) => ({ ...a, created_at: a.occurred_at })), data.now);
       if (dup) throw new GameError("DUPLICATE: This looks identical to an activity you logged a few minutes ago. Submit again with confirmation if it's a separate session.", 409);
@@ -686,7 +816,7 @@ export class GameService {
         deadline: cmd.deadline,
         status: "active",
         xp_reward: xp,
-        config: { baseline: { acceptedAt: data.now.getTime() } },
+        config: { baseline: { acceptedAt: data.now.getTime() }, ...((await penaltiesEnabled(this.db)) ? { penalized: true, penaltyXp: questPenalty(xp, data.profile.difficulty) } : {}) },
       },
       ["user_id", "template_code", "period_start"],
     );
@@ -749,7 +879,7 @@ export class GameService {
     const s = this.openSession(data, cmd.sessionId);
     const def = DUNGEON_BY_CODE[s.dungeon_code];
     const secs = activeSecondsNow(s, data.now);
-    if (!canClear(s.planned_minutes, secs)) throw new GameError(`The boss still stands: ${Math.ceil((s.planned_minutes * 60 * 0.9 - secs) / 60)} more minutes needed to clear. You can retreat without penalty and keep your progress.`);
+    if (!canClear(s.planned_minutes, secs)) throw new GameError(`The boss still stands: ${Math.ceil((s.planned_minutes * 60 * 0.9 - secs) / 60)} more minutes needed to clear. Retreating keeps partial credit but costs XP.`);
     // Ending the session first prevents a double clear.
     const updated = await this.svc.update<DungeonSessionRow>("dungeon_sessions", { id: s.id, user_id: this.userId, status: s.status }, { status: "cleared", active_seconds: secs, ended_at: data.now.toISOString(), last_resumed_at: null });
     if (!updated.length) throw new GameError("Dungeon already ended.", 409);
@@ -789,6 +919,11 @@ export class GameService {
         credited = minutes;
       }
     }
-    events.push({ type: "dungeon_retreat", name: def.name, creditedMinutes: credited });
+    let penalty = 0;
+    if (await penaltiesEnabled(this.db)) {
+      const amount = flatPenalty(DUNGEON_RETREAT_PENALTY, data.profile.difficulty);
+      if (await this.penalize(data, { amount, attribute: "DIS", sourceType: "dungeon_retreat", sourceId: s.id, reason: `Retreated from ${def.name}`, key: `penalty:dungeon:${s.id}` })) penalty = amount;
+    }
+    events.push({ type: "dungeon_retreat", name: def.name, creditedMinutes: credited, penalty });
   }
 }

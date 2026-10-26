@@ -1,5 +1,6 @@
 import type { ISODate } from "../domain/dates";
 import type { AttributeCode, EntryContext, Sex, UnitSystem } from "../domain/types";
+import type { QuestCategory } from "../domain/regimen";
 import type { XpTransactionRow } from "../domain/xp";
 
 /** Row shapes exactly as stored (snake_case columns, see supabase/migrations). */
@@ -41,6 +42,8 @@ export interface SettingsRow {
   comparison_preference: "sex_matched" | "all";
   last_login_on: ISODate | null;
   login_streak: number;
+  /** absent until migration 0003 is applied */
+  regimen?: Record<string, unknown>;
   updated_at: string;
 }
 
@@ -107,8 +110,8 @@ export interface TrialResultRow {
   completed_at: string | null;
 }
 
-export type QuestKind = "daily" | "weekly" | "main" | "emergency" | "custom";
-export type QuestStatus = "offered" | "active" | "completed" | "expired" | "abandoned";
+export type QuestKind = "daily" | "weekly" | "main" | "emergency" | "custom" | "penalty";
+export type QuestStatus = "offered" | "active" | "completed" | "expired" | "abandoned" | "failed" | "exempt";
 
 export interface QuestRow {
   id: string;
@@ -124,21 +127,36 @@ export interface QuestRow {
   deadline: string | null;
   status: QuestStatus;
   xp_reward: number;
-  config: { titleReward?: string; chapters?: { number: number; name: string; description: string }[]; storyArc?: string; habit?: boolean; baseline?: Record<string, number> };
+  config: {
+    titleReward?: string;
+    chapters?: { number: number; name: string; description: string }[];
+    storyArc?: string;
+    habit?: boolean;
+    baseline?: Record<string, number>;
+    category?: QuestCategory;
+    /** failing this quest costs XP (set on quests issued once penalties exist) */
+    penalized?: boolean;
+    /** XP lost when this quest fails, fixed when it was issued */
+    penaltyXp?: number;
+    /** Penalty Zone: quests whose failure caused it */
+    causes?: string[];
+    recoveryPass?: boolean;
+  };
   created_at: string;
   completed_at: string | null;
 }
 
 export type Tracker =
-  | { type: "activity_minutes"; activities: string[] }
-  | { type: "activity_count"; activities: string[] }
-  | { type: "activity_quantity"; activities: string[] }
+  | { type: "activity_minutes"; activities: string[]; beyond?: number }
+  | { type: "activity_count"; activities: string[]; beyond?: number }
+  | { type: "activity_quantity"; activities: string[]; beyond?: number }
   | { type: "metric_logged"; metric: string }
   | { type: "sleep_in_range"; min: number; max: number }
   | { type: "metric_reach"; metric: string; target: number; direction: "higher" | "lower" }
   | { type: "metric_gain"; metric: string; amount: number }
   | { type: "dungeon_clears"; kinds?: string[] }
   | { type: "personal_records" }
+  | { type: "perfect_days" }
   | { type: "lifetime_stat"; stat: string }
   | { type: "manual" };
 

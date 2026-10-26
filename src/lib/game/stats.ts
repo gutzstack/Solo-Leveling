@@ -103,7 +103,8 @@ export function computeStats(data: GameData): Stats {
   const questById = new Map(data.quests.map((q) => [q.id, q]));
   const perfectDayCandidates = new Map<ISODate, { total: number; done: number }>();
   for (const q of data.quests) {
-    if (q.kind === "daily" && q.status !== "offered") {
+    if (q.status === "failed") inc("quests_failed");
+    if (q.kind === "daily" && q.status !== "offered" && q.status !== "exempt") {
       const d = perfectDayCandidates.get(q.period_start) ?? { total: 0, done: 0 };
       d.total += 1;
       if (q.status === "completed") d.done += 1;
@@ -121,6 +122,7 @@ export function computeStats(data: GameData): Stats {
     inc("quests_completed");
     inc(`quests_${q.kind}_completed`);
     if (q.kind === "main") inc("main_quests_completed");
+    if (q.template_code === "daily_regimen") inc("regimen_days");
     if (q.kind === "emergency" && q.deadline && Date.parse(qc.completed_at) <= Date.parse(q.deadline)) inc("emergency_on_time");
   }
   c.perfect_days = [...perfectDayCandidates.values()].filter((d) => d.total > 0 && d.done === d.total).length;

@@ -16,6 +16,7 @@ function isOverlay(e: GameEvent): boolean {
   if (e.type === "rank_up" && e.scope === "hunter") return true;
   if (e.type === "dungeon_clear" && e.boss) return true;
   if (e.type === "achievement" && (e.rarity === "legendary" || e.rarity === "mythic")) return true;
+  if (e.type === "penalty" && e.zone) return true;
   return false;
 }
 
@@ -35,6 +36,7 @@ function sfxFor(e: GameEvent) {
     case "quest_complete":
       return "xp" as const;
     case "duplicate_warning":
+    case "penalty":
       return "error" as const;
     default:
       return "notify" as const;
@@ -90,7 +92,15 @@ function toastContent(e: GameEvent): { tag: string; title: string; body?: string
     case "dungeon_clear":
       return { tag: "[DUNGEON CLEARED]", title: e.name, body: e.xp ? `Clear bonus +${e.xp} XP${e.uninterrupted ? " · Unbroken" : ""}` : undefined, icon: Swords, tone: "text-emerald-300" };
     case "dungeon_retreat":
-      return { tag: "[SAFE RETREAT]", title: e.name, body: e.creditedMinutes ? `Progress preserved: ${e.creditedMinutes} minutes credited.` : "No penalty. The gate will be here when you return.", icon: Info, tone: "text-sky-300" };
+      return {
+        tag: "[RETREAT]",
+        title: e.name,
+        body: [e.creditedMinutes ? `${e.creditedMinutes} minutes credited.` : "No minutes credited.", e.penalty ? `Retreat penalty −${e.penalty} XP.` : ""].filter(Boolean).join(" "),
+        icon: Info,
+        tone: e.penalty ? "text-red-300" : "text-sky-300",
+      };
+    case "penalty":
+      return { tag: "[PENALTY]", title: e.xp ? `${e.title}: −${e.xp} XP` : e.title, body: e.body, icon: Skull, tone: "text-red-300" };
     case "duplicate_warning":
       return { tag: "[WARNING]", title: "Possible duplicate", body: e.message, icon: AlertTriangle, tone: "text-amber-300" };
     case "info":
@@ -175,6 +185,11 @@ function Overlay({ item }: { item: QueuedEvent }) {
       tag = "[BOSS DEFEATED]";
       big = <Skull className="size-24 text-red-300" />;
       line = `${e.boss ?? e.name} has fallen.${e.xp ? ` +${e.xp} XP` : ""}`;
+      break;
+    case "penalty":
+      tag = "[PENALTY ZONE]";
+      big = <Skull className="size-24 text-red-400" />;
+      line = e.body;
       break;
     case "achievement":
       tag = `[${e.rarity.toUpperCase()} ACHIEVEMENT]`;

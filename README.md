@@ -92,7 +92,8 @@ indexes and unique idempotency keys throughout.
 | **INT / System Trials** | INT is ranked on tests the System administers, not GPA: **Knowledge Trials** (multiple-choice questions from question sets you import as CSV/JSON, or optionally generate with AI, labelled unverified; Elo-style rating), **Reasoning Trials** (procedurally generated, adaptive number-series and number-grid puzzles; rating), **Memory Trials** (forward + backward digit span) and **Speed Trials** (60-second arithmetic). Weights: Knowledge 3×, Reasoning 2×, official exam percentile 1.5×, Memory 1×, Speed 1×, self-reported exam/quiz/assessment averages 0.5×. GPA, study hours and reading are tracked records only. Items and answer keys are generated and checked server-side (the answer key is not client-readable), with per-item time limits. None of this is an IQ score or a population percentile. |
 | **Metric ranks** | Population percentile when appropriate data exists (VERIFIED/ESTIMATED); otherwise game-defined standards or evidence-based goal attainment (PERSONAL). Neutral measures (weight, height, BMI, waist) get descriptive positions, never ranks. Historical PBs are shown separately from current ability. |
 | **Hunter Rank** | Game-defined weighted average of ranked attribute scores (configurable weights), explicitly *not* a population percentile, with an uncertainty band propagated only from population CIs. Provisional until 3 attributes rank. |
-| **Quests** | Daily board (rotating, difficulty-scaled, built-in recovery day), weekly quests, four main story arcs with chapters/prerequisites/titles, optional emergency quests (accept or decline, no penalties), custom quests with server-capped XP. Progress is tracked automatically from logs. |
+| **Quests** | Daily board grouped into Physical / Intellectual / Mental / Health / Social categories, built from the player's regimen (System → Regimen; default 100 push-ups, 100 sit-ups, 100 pull-ups and a 5 km run every day). Weekly quests, four main story arcs with chapters/prerequisites/titles, optional emergency quests, custom quests with server-capped XP. Progress is tracked automatically from logs; reps can be logged in sets from the quest card. |
+| **Penalties** | Failing a daily, weekly, accepted emergency or custom quest costs its XP reward (scaled by difficulty: casual ×0.5 … nightmare ×2). Failed dailies open a **Penalty Zone** the next day (finish the unfinished work on top of the day's quests, or lose double). Days the player doesn't open the app still fail (up to 7 back). Abandoning quests, retreating from dungeons and abandoning trials also cost XP. One recovery pass per week (configurable 0–2) waives a day's physical quests for illness or injury. Penalties are negative `penalty` rows in the XP ledger and never take XP below zero. |
 | **Dungeons** | Server-timed focus sessions (focus or Pomodoro), pause/resume, clear at ≥ 90 %, retreat keeps credit for ≥ 15 min, boss encounters, ambient soundtrack. |
 | **Skills** | 15 lines × 5 tiers across Academic / Physical / Discipline trees; unlock from measurable milestones only. |
 | **Achievements** | 149 with rarity, icon, criteria, XP and unlock dates; 26 equippable titles. |
@@ -149,8 +150,10 @@ for more NHANES variables, then run the tests.
 ## Deploying
 
 ### Supabase + Vercel (recommended)
-1. Create a Supabase project. In the SQL editor, run `supabase/migrations/0001_system_irl.sql`
-   (or `supabase db push`). Do **not** run `supabase/local/auth_shim.sql`.
+1. Create a Supabase project. In the SQL editor, run every file in `supabase/migrations/` in order
+   (`0001_…`, `0002_…`, `0003_…`), or use `supabase db push`. Do **not** run
+   `supabase/local/auth_shim.sql`. Until `0003_regimen_penalties.sql` is applied the app runs
+   without penalties and the regimen can't be edited.
 2. Auth → URL configuration: set the Site URL to your deployment. Either keep email confirmation
    (users confirm, then sign in) or disable it for a private deployment.
 3. On Vercel, import the repo and set the three Supabase variables (plus `ANTHROPIC_API_KEY` if

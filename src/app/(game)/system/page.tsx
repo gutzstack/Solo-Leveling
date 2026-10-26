@@ -13,6 +13,7 @@ import { pushInfo } from "@/lib/client/events";
 import { SNAPSHOT_KEY, useCommand, useSnapshot } from "@/lib/client/use-game";
 import { ACTIVITIES } from "@/lib/domain/activities";
 import { ATTRIBUTES } from "@/lib/domain/attributes";
+import { CATEGORY_INFO, PENALTY_MULTIPLIER, QUEST_CATEGORIES, questPenalty, resolveRegimen, type Regimen } from "@/lib/domain/regimen";
 import { ATTRIBUTE_CODES, type AttributeCode } from "@/lib/domain/types";
 import { cmToFeetInches, feetInchesToCm, kgToLb, lbToKg } from "@/lib/domain/units";
 import { totalXpForLevel, xpToNextLevel } from "@/lib/domain/xp";
@@ -27,6 +28,7 @@ export default function SystemPage() {
       <Tabs defaultValue="profile">
         <TabsList className="mb-4">
           <TabsTrigger value="profile">Profile</TabsTrigger>
+          <TabsTrigger value="regimen">Regimen</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
           <TabsTrigger value="scoring">Scoring</TabsTrigger>
           <TabsTrigger value="data">Data</TabsTrigger>
@@ -35,6 +37,9 @@ export default function SystemPage() {
         </TabsList>
         <TabsContent value="profile">
           <ProfileForm s={data} />
+        </TabsContent>
+        <TabsContent value="regimen">
+          <RegimenForm s={data} />
         </TabsContent>
         <TabsContent value="settings">
           <SettingsForm s={data} />
@@ -236,6 +241,87 @@ function Toggle({ label, hint, checked, onChange }: { label: string; hint?: stri
         {hint ? <p className="text-xs text-faint">{hint}</p> : null}
       </div>
       <Switch checked={checked} onCheckedChange={onChange} aria-label={label} />
+    </div>
+  );
+}
+
+function RegimenForm({ s }: { s: PlayerSnapshot }) {
+  const cmd = useCommand({ silent: true });
+  const [r, setR] = useState<Regimen>(() => resolveRegimen(s.settings.regimen));
+  const [saved, setSaved] = useState(false);
+  const num = (k: "pushups" | "situps" | "pullups" | "runKm", label: string, step = 1) => (
+    <Field label={label} htmlFor={`rg-${k}`}>
+      <Input id={`rg-${k}`} type="number" min={0} max={k === "runKm" ? 50 : 1000} step={step} value={r[k]} onChange={(e) => setR((x) => ({ ...x, [k]: Math.max(0, Number(e.target.value)) }))} />
+    </Field>
+  );
+  const mult = PENALTY_MULTIPLIER[s.profile.difficulty];
+  const physicalObjectives = [r.pushups, r.situps, r.pullups, r.runKm].filter((v) => v > 0).length;
+  return (
+    <div className="grid gap-5 lg:grid-cols-2">
+      <Panel title="Daily regimen" subtitle="The targets behind your daily quests. Changes apply from tomorrow's board; today's quests keep their targets.">
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setSaved(false);
+            cmd.mutate({ type: "update_settings", settings: { regimen: r } }, { onSuccess: () => setSaved(true) });
+          }}
+        >
+          <p className="font-display text-[10px] tracking-[0.18em] text-dim">PHYSICAL · PREPARATIONS TO BECOME POWERFUL</p>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {num("pushups", "Push-ups")}
+            {num("situps", "Sit-ups")}
+            {num("pullups", "Pull-ups")}
+            {num("runKm", "Run (km)", 0.5)}
+          </div>
+          <p className="text-xs text-faint">Set any target to 0 to drop it. Log reps in as many sets as you like from the quest card.</p>
+          <p className="font-display text-[10px] tracking-[0.18em] text-dim">INTELLECTUAL</p>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Study minutes per day" htmlFor="rg-study" hint="Blank scales 90 minutes by difficulty.">
+              <Input id="rg-study" type="number" min={0} max={600} step={15} placeholder="auto" value={r.studyMinutes ?? ""} onChange={(e) => setR((x) => ({ ...x, studyMinutes: e.target.value === "" ? null : Math.max(0, Math.round(Number(e.target.value))) }))} />
+            </Field>
+            <Field label="Daily System Trial" htmlFor="rg-trial">
+              <div className="pt-2">
+                <Switch id="rg-trial" checked={r.dailyTrial} onCheckedChange={(v) => setR((x) => ({ ...x, dailyTrial: v }))} aria-label="Daily System Trial" />
+              </div>
+            </Field>
+          </div>
+          <p className="font-display text-[10px] tracking-[0.18em] text-dim">CATEGORIES</p>
+          <div>
+            {QUEST_CATEGORIES.map((c) => (
+              <Toggle key={c} label={CATEGORY_INFO[c].name} hint={CATEGORY_INFO[c].blurb} checked={r.categories[c]} onChange={(v) => setR((x) => ({ ...x, categories: { ...x.categories, [c]: v } }))} />
+            ))}
+          </div>
+          <Field label={`Recovery passes per week: ${r.recoveryPassesPerWeek}`} hint="A pass waives one day's physical quests with no penalty, for illness, injury or a planned rest day.">
+            <Slider min={0} max={2} step={1} value={[r.recoveryPassesPerWeek]} onValueChange={([v]) => setR((x) => ({ ...x, recoveryPassesPerWeek: v }))} aria-label="Recovery passes per week" />
+          </Field>
+          {cmd.error ? <p className="text-sm text-red-300 light:text-red-700">{cmd.error.message}</p> : null}
+          {saved ? <p className="text-sm text-success">Saved. Tomorrow&apos;s board will use the new regimen.</p> : null}
+          <Button type="submit" disabled={cmd.isPending}>
+            Save regimen
+          </Button>
+        </form>
+      </Panel>
+      <Panel title="Penalties" subtitle={`Severity follows your difficulty (${s.profile.difficulty}: ×${mult}). Change it under Profile.`}>
+        <ul className="space-y-2 text-sm text-dim">
+          <li>
+            <span className="text-fg">Failed daily quest:</span> lose the XP it would have paid (×{mult}). The training regimen is worth {s.xpConfig.dailyQuest * physicalObjectives} XP, so failing it costs {physicalObjectives ? questPenalty(s.xpConfig.dailyQuest * physicalObjectives, s.profile.difficulty) : 0} XP.
+          </li>
+          <li>
+            <span className="text-fg">Penalty Zone:</span> the day after you fail daily quests, finish the unfinished reps, distance and minutes on top of the new day&apos;s quests. Failing it costs double.
+          </li>
+          <li>
+            <span className="text-fg">Missed days:</span> days you don&apos;t open the app still count as failed (up to 7 days back).
+          </li>
+          <li>
+            <span className="text-fg">Weekly quests, accepted emergency gates and custom quests:</span> failing or abandoning them costs their XP reward (×{mult}). Declining an emergency offer is free.
+          </li>
+          <li>
+            <span className="text-fg">Dungeon retreat:</span> −{Math.max(1, Math.round(15 * mult))} XP. <span className="text-fg">Abandoned System Trial:</span> −{Math.max(1, Math.round(10 * mult))} XP.
+          </li>
+          <li>Penalties never take XP below zero. Main story quests have no deadline and no penalty.</li>
+        </ul>
+      </Panel>
     </div>
   );
 }

@@ -80,7 +80,7 @@ function DungeonCard({ d, disabled }: { d: DungeonDef; disabled: boolean }) {
             <Swords /> Enter
           </Button>
         </DialogTrigger>
-        <DialogContent title={`Enter: ${d.name}`} description={`Clear by completing at least ${Math.round(CLEAR_THRESHOLD * 100)}% of the planned time. You may pause or retreat at any time without penalty.`}>
+        <DialogContent title={`Enter: ${d.name}`} description={`Clear by completing at least ${Math.round(CLEAR_THRESHOLD * 100)}% of the planned time. You may pause at any time. Retreating keeps credit for 15+ focused minutes but costs XP.`}>
           <form
             className="space-y-4"
             onSubmit={(e) => {
@@ -241,7 +241,7 @@ function ActiveDungeon() {
             <Button variant="success" disabled={!clearable || cmd.isPending} onClick={() => (d.completionInput || d.activity === "workout" ? setFinish(true) : cmd.mutate({ type: "complete_dungeon", sessionId: s.id }))}>
               <Swords /> {clearable ? "Clear dungeon" : `Clear at ${Math.round(CLEAR_THRESHOLD * 100)}%`}
             </Button>
-            <Button variant="ghost" onClick={() => confirm("Retreat? You keep credit for focused time of 15+ minutes. There is no penalty.") && cmd.mutate({ type: "retreat_dungeon", sessionId: s.id })} disabled={cmd.isPending}>
+            <Button variant="ghost" onClick={() => confirm("Retreat? You keep credit for focused time of 15+ minutes, but retreating costs XP.") && cmd.mutate({ type: "retreat_dungeon", sessionId: s.id })} disabled={cmd.isPending}>
               <LogOut /> Retreat
             </Button>
             <Button

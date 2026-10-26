@@ -32,15 +32,16 @@ export function objectiveProgress(obj: ObjectiveRow, quest: QuestRow, data: Game
   let value = 0;
   let unit = "";
   switch (t.type) {
+    // `beyond` (Penalty Zone) counts only what is done on top of that day's regular daily target.
     case "activity_minutes":
-      value = acts(t.activities).reduce((a, x) => a + (x.duration_min ?? 0), 0);
+      value = Math.max(0, acts(t.activities).reduce((a, x) => a + (x.duration_min ?? 0), 0) - (t.beyond ?? 0));
       unit = "min";
       break;
     case "activity_count":
-      value = acts(t.activities).length;
+      value = Math.max(0, acts(t.activities).length - (t.beyond ?? 0));
       break;
     case "activity_quantity":
-      value = acts(t.activities).reduce((a, x) => a + (x.quantity ?? 0), 0);
+      value = Math.max(0, acts(t.activities).reduce((a, x) => a + (x.quantity ?? 0), 0) - (t.beyond ?? 0));
       break;
     case "metric_logged":
       value = data.entries.filter((e) => e.metric_id === t.metric && (quest.kind === "main" || (e.context !== "historical" && e.recorded_on >= from && e.recorded_on <= to))).length;
@@ -65,6 +66,9 @@ export function objectiveProgress(obj: ObjectiveRow, quest: QuestRow, data: Game
         return d >= from && d <= to && (quest.kind !== "emergency" || inEmergencyWindow(s.ended_at));
       }).length;
       break;
+    case "perfect_days":
+      value = perfectDays(data, from, to);
+      break;
     case "personal_records":
       value = stats.personalRecords.filter((r) => r.recordedOn >= from && r.recordedOn <= to).length;
       break;
@@ -81,6 +85,16 @@ export function objectiveProgress(obj: ObjectiveRow, quest: QuestRow, data: Game
   const fraction = done ? 1 : Math.max(0, Math.min(1, target > 0 ? value / target : 0));
   const fmt = (x: number) => (Number.isInteger(x) ? x.toLocaleString("en-US") : (Math.round(x * 10) / 10).toLocaleString("en-US"));
   return { value, target, fraction, done, display: `${fmt(Math.min(value, target))} / ${fmt(target)}${unit ? " " + unit : ""}` };
+}
+
+/** Days in [from, to] on which every required daily quest was completed. */
+export function perfectDays(data: GameData, from: ISODate, to: ISODate): number {
+  const days = new Map<ISODate, boolean>();
+  for (const q of data.quests) {
+    if (q.kind !== "daily" || q.period_start < from || q.period_start > to || q.status === "offered" || q.status === "exempt") continue;
+    days.set(q.period_start, (days.get(q.period_start) ?? true) && q.status === "completed");
+  }
+  return [...days.values()].filter(Boolean).length;
 }
 
 /** Chapter number currently in play for a main quest (1-based), or null when every chapter is complete. */

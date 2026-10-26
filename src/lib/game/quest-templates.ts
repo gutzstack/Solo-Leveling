@@ -1,5 +1,6 @@
-import { addDays, isoWeekday, weekStart, type ISODate } from "../domain/dates";
-import { lbToKg, miToKm } from "../domain/units";
+import { addDays, weekStart, type ISODate } from "../domain/dates";
+import { DEFAULT_REGIMEN, type QUEST_CATEGORIES, type QuestCategory, type Regimen } from "../domain/regimen";
+import { lbToKg } from "../domain/units";
 import type { XpConfig } from "../domain/xp";
 import type { AttributeCode } from "../domain/types";
 import type { ProfileRow, QuestKind, QuestRow, Tracker } from "./rows";
@@ -45,80 +46,108 @@ export function hashString(s: string): number {
 
 const tracks = (p: ProfileRow, a: AttributeCode) => p.tracked_categories.includes(a);
 
-function daily(p: ProfileRow, date: ISODate, cfg: XpConfig, code: string, title: string, description: string, attribute: AttributeCode, objectives: ObjectiveDraft[], habit = false): QuestDraft {
+/** A category is on when the regimen enables it and the player tracks a related attribute. */
+export function categoryEnabled(p: ProfileRow, r: Regimen, c: (typeof QUEST_CATEGORIES)[number]): boolean {
+  if (!r.categories[c]) return false;
+  const related: Record<(typeof QUEST_CATEGORIES)[number], AttributeCode[]> = { physical: ["STR", "END", "PHY"], intellectual: ["INT"], mental: ["WIS"], health: ["PHY", "WIS"], social: ["CHA"] };
+  return related[c].some((a) => tracks(p, a));
+}
+
+function daily(date: ISODate, cfg: XpConfig, category: QuestCategory, code: string, title: string, description: string, attribute: AttributeCode, objectives: ObjectiveDraft[], opts: { habit?: boolean; xp?: number; difficulty?: QuestRow["difficulty"] } = {}): QuestDraft {
   return {
     kind: "daily",
     template_code: code,
     title,
     description,
     attribute_code: attribute,
-    difficulty: "D",
+    difficulty: opts.difficulty ?? "D",
     period_start: date,
     period_end: date,
     deadline: null,
     status: "active",
-    xp_reward: cfg.dailyQuest,
-    config: { habit },
+    xp_reward: opts.xp ?? cfg.dailyQuest,
+    config: { habit: opts.habit ?? false, category },
     objectives,
   };
 }
 
-/** Daily quest board, generated from tracked categories, goals and difficulty. */
-export function generateDailyQuests(p: ProfileRow, date: ISODate, cfg: XpConfig, userId: string): QuestDraft[] {
+const fmtKm = (km: number) => `${Math.round(km * 100) / 100} km (${Math.round((km / 1.609344) * 10) / 10} mi)`;
+
+/** Daily quest board: one or more quests per enabled category, built from the player's regimen. */
+export function generateDailyQuests(p: ProfileRow, date: ISODate, cfg: XpConfig, _userId: string, r: Regimen = DEFAULT_REGIMEN): QuestDraft[] {
   const out: QuestDraft[] = [];
-  const wd = isoWeekday(date);
-  const h = hashString(`${userId}:${date}`);
 
-  if (tracks(p, "INT")) {
-    const mins = scale(90, p, 15);
-    out.push(daily(p, date, cfg, "daily_study", `Complete ${mins} minutes of focused study`, "Deep, distraction-free study. Dungeon sessions count.", "INT", [{ title: `Study ${mins} minutes`, tracker: { type: "activity_minutes", activities: ["study", "quiz", "practice_exam"] }, target: mins }]));
-  }
-
-  // Training split by weekday, with a recovery day built in.
-  const plan: Record<number, "upper" | "run" | "lower" | "mobility" | "full" | "long_run" | "rest"> = { 1: "upper", 2: "run", 3: "lower", 4: "mobility", 5: "full", 6: "long_run", 7: "rest" };
-  const today = plan[wd];
-  const str = tracks(p, "STR");
-  const end = tracks(p, "END");
-  if ((today === "upper" || today === "lower" || today === "full") && str) {
-    const label = today === "upper" ? "an upper-body" : today === "lower" ? "a lower-body" : "a full-body";
-    out.push(daily(p, date, cfg, `daily_workout_${today}`, `Perform ${label} workout`, "Any strength session of 20+ minutes. Leave a rep or two in reserve; injuries cost more than they earn.", "STR", [{ title: "Strength workout (20+ min)", tracker: { type: "activity_count", activities: ["workout"] }, target: 1 }]));
-  } else if ((today === "run" || today === "long_run") && end) {
-    const km = today === "long_run" ? miToKm(scale(6, p, 1)) : miToKm(scale(3, p, 1));
-    out.push(daily(p, date, cfg, `daily_${today}`, today === "long_run" ? `Long run: ${Math.round((km / 1.609344) * 10) / 10} miles` : `Run ${Math.round((km / 1.609344) * 10) / 10} miles`, "Mostly easy, conversational pace.", "END", [{ title: "Run distance", tracker: { type: "activity_quantity", activities: ["run"] }, target: Math.round(km * 100) / 100 }]));
-  } else if (today === "mobility" && (str || end || tracks(p, "PHY"))) {
-    out.push(daily(p, date, cfg, "daily_mobility", "Mobility & recovery session", "15+ minutes of mobility or stretching keeps you training tomorrow.", "PHY", [{ title: "Mobility session", tracker: { type: "activity_count", activities: ["mobility"] }, target: 1 }]));
-  } else if (today === "rest") {
-    out.push(daily(p, date, cfg, "daily_rest", "Take a planned recovery day", "Adaptation happens during rest. Log a recovery day (easy walking is fine).", "PHY", [{ title: "Log a recovery day", tracker: { type: "activity_count", activities: ["rest_day"] }, target: 1 }], true));
+  if (categoryEnabled(p, r, "physical")) {
+    const objs: ObjectiveDraft[] = [];
+    if (r.pushups > 0) objs.push({ title: `${r.pushups} push-ups`, tracker: { type: "activity_quantity", activities: ["pushups"] }, target: r.pushups });
+    if (r.situps > 0) objs.push({ title: `${r.situps} sit-ups`, tracker: { type: "activity_quantity", activities: ["situps"] }, target: r.situps });
+    if (r.pullups > 0) objs.push({ title: `${r.pullups} pull-ups`, tracker: { type: "activity_quantity", activities: ["pullups"] }, target: r.pullups });
+    if (r.runKm > 0) objs.push({ title: `Run ${fmtKm(r.runKm)}`, tracker: { type: "activity_quantity", activities: ["run"] }, target: Math.round(r.runKm * 100) / 100 });
+    if (objs.length)
+      out.push(
+        daily(date, cfg, "physical", "daily_regimen", "PREPARATIONS TO BECOME POWERFUL", "The daily training regimen. Log reps in as many sets as you like. Failing to complete it opens the Penalty Zone.", "STR", objs, {
+          xp: cfg.dailyQuest * objs.length,
+          difficulty: "C",
+        }),
+      );
   }
 
-  if (tracks(p, "PHY") || tracks(p, "WIS")) {
-    out.push(daily(p, date, cfg, "daily_sleep", "Get adequate sleep (7–9 h)", "Log last night's sleep. 7–9 hours is the goal: not less, and no bonus for more.", "PHY", [{ title: "Log sleep within 7–9 h", tracker: { type: "sleep_in_range", min: 7, max: 9 }, target: 1 }], true));
+  if (categoryEnabled(p, r, "intellectual")) {
+    const mins = r.studyMinutes ?? scale(90, p, 15);
+    if (mins > 0) out.push(daily(date, cfg, "intellectual", "daily_study", `Complete ${mins} minutes of focused study`, "Deep, distraction-free study. Dungeon sessions count.", "INT", [{ title: `Study ${mins} minutes`, tracker: { type: "activity_minutes", activities: ["study", "quiz", "practice_exam"] }, target: mins }]));
+    if (r.dailyTrial) out.push(daily(date, cfg, "intellectual", "daily_trial", "Complete a System Trial", "Any trial counts: reasoning, memory, speed or knowledge.", "INT", [{ title: "1 System Trial", tracker: { type: "activity_count", activities: ["system_trial"] }, target: 1 }]));
   }
 
-  const optional: QuestDraft[] = [];
-  if (tracks(p, "INT")) {
-    const cards = scale(50, p, 10);
-    optional.push(daily(p, date, cfg, "daily_flashcards", `Review ${cards} flashcards`, "Spaced retrieval practice.", "INT", [{ title: `${cards} cards`, tracker: { type: "activity_quantity", activities: ["flashcards"] }, target: cards }]));
+  if (categoryEnabled(p, r, "mental")) {
+    out.push(daily(date, cfg, "mental", "daily_reflection", "Reflect or meditate", "Three minutes of reflection or five of mindfulness: what went well, what you learned, tomorrow's priority.", "WIS", [{ title: "Reflection or meditation", tracker: { type: "activity_count", activities: ["reflection", "mindfulness"] }, target: 1 }], { habit: true }));
   }
-  if (tracks(p, "PHY")) {
-    optional.push(daily(p, date, cfg, "daily_steps", "Walk 8,000 steps", "Log a walk with your step count.", "PHY", [{ title: "8,000 steps", tracker: { type: "activity_quantity", activities: ["walk"] }, target: 8000 }]));
-    optional.push(daily(p, date, cfg, "daily_nutrition", "Log your nutrition", "A quick log of today's meals and protein.", "PHY", [{ title: "Nutrition log", tracker: { type: "activity_count", activities: ["nutrition_log"] }, target: 1 }], true));
+
+  if (categoryEnabled(p, r, "health")) {
+    out.push(daily(date, cfg, "health", "daily_sleep", "Get adequate sleep (7–9 h)", "Log last night's sleep. 7–9 hours is the goal: not less, and no bonus for more.", "PHY", [{ title: "Log sleep within 7–9 h", tracker: { type: "sleep_in_range", min: 7, max: 9 }, target: 1 }], { habit: true }));
+    out.push(daily(date, cfg, "health", "daily_nutrition", "Log your nutrition", "A quick log of today's meals and protein.", "PHY", [{ title: "Nutrition log", tracker: { type: "activity_count", activities: ["nutrition_log"] }, target: 1 }], { habit: true }));
   }
-  if (tracks(p, "WIS")) {
-    optional.push(daily(p, date, cfg, "daily_reflection", "Complete a daily reflection", "Three minutes: what went well, what you learned, tomorrow's priority.", "WIS", [{ title: "Reflection", tracker: { type: "activity_count", activities: ["reflection"] }, target: 1 }], true));
+
+  if (categoryEnabled(p, r, "social")) {
+    out.push(daily(date, cfg, "social", "daily_connection", "Reach out to someone who matters", "A call, a coffee, a meaningful message.", "CHA", [{ title: "Relationship maintenance", tracker: { type: "activity_count", activities: ["social_connection", "communication", "networking"] }, target: 1 }]));
   }
-  if (tracks(p, "CHA")) {
-    optional.push(daily(p, date, cfg, "daily_connection", "Reach out to someone who matters", "A call, a coffee, a meaningful message.", "CHA", [{ title: "Relationship maintenance", tracker: { type: "activity_count", activities: ["social_connection", "communication", "networking"] }, target: 1 }]));
-  }
-  // Pick up to three optional quests, rotated deterministically.
-  const picks = Math.min(3, optional.length);
-  const start = optional.length ? h % optional.length : 0;
-  for (let i = 0; i < picks; i++) out.push(optional[(start + i) % optional.length]);
   return out;
 }
 
-function weekly(p: ProfileRow, ws: ISODate, cfg: XpConfig, code: string, title: string, description: string, attribute: AttributeCode, objectives: ObjectiveDraft[]): QuestDraft {
-  return { kind: "weekly", template_code: code, title, description, attribute_code: attribute, difficulty: "C", period_start: ws, period_end: addDays(ws, 6), deadline: null, status: "active", xp_reward: cfg.weeklyQuest, config: {}, objectives };
+/**
+ * The Penalty Zone: issued the day after daily quests fail. It demands the unfinished work on top of
+ * the new day's own quests, and failing it costs double.
+ */
+export function penaltyZoneDraft(date: ISODate, failed: { quest: QuestRow; remaining: { title: string; tracker: Tracker; amount: number }[] }[], todays: QuestDraft[], failPenalty: number): QuestDraft | null {
+  const objectives: ObjectiveDraft[] = [];
+  for (const f of failed)
+    for (const rem of f.remaining) {
+      const t = rem.tracker;
+      if (t.type !== "activity_quantity" && t.type !== "activity_minutes" && t.type !== "activity_count") continue;
+      const same = (x: Tracker) => x.type === t.type && JSON.stringify([...(x as { activities: string[] }).activities].sort()) === JSON.stringify([...t.activities].sort());
+      const beyond = todays.flatMap((d) => d.objectives).filter((o) => same(o.tracker)).reduce((a, o) => a + o.target, 0);
+      const amount = Math.round(rem.amount * 100) / 100;
+      objectives.push({ title: `Unfinished: ${rem.title} (${amount} left)`, tracker: { ...t, beyond }, target: amount });
+    }
+  if (!objectives.length) return null;
+  return {
+    kind: "penalty",
+    template_code: "penalty_zone",
+    title: "PENALTY ZONE",
+    description: `You failed to complete yesterday's quests. Finish the remaining work today, on top of today's quests, before midnight. Failure costs ${failPenalty} XP.`,
+    attribute_code: "DIS",
+    difficulty: "A",
+    period_start: date,
+    period_end: date,
+    deadline: null,
+    status: "active",
+    xp_reward: 0,
+    config: { category: "discipline", penalized: true, penaltyXp: failPenalty, causes: failed.map((f) => f.quest.id) },
+    objectives: objectives.slice(0, 12),
+  };
+}
+
+function weekly(ws: ISODate, cfg: XpConfig, category: QuestCategory, code: string, title: string, description: string, attribute: AttributeCode, objectives: ObjectiveDraft[]): QuestDraft {
+  return { kind: "weekly", template_code: code, title, description, attribute_code: attribute, difficulty: "C", period_start: ws, period_end: addDays(ws, 6), deadline: null, status: "active", xp_reward: cfg.weeklyQuest, config: { category }, objectives };
 }
 
 export function generateWeeklyQuests(p: ProfileRow, date: ISODate, cfg: XpConfig): QuestDraft[] {
@@ -126,30 +155,23 @@ export function generateWeeklyQuests(p: ProfileRow, date: ISODate, cfg: XpConfig
   const out: QuestDraft[] = [];
   if (tracks(p, "INT")) {
     const hours = scale(15, p, 1);
-    out.push(weekly(p, ws, cfg, "weekly_study", `Study ${hours} focused hours`, "Spread across the week. Five 3-hour days beats one 15-hour panic.", "INT", [{ title: `${hours} hours of study`, tracker: { type: "activity_minutes", activities: ["study", "quiz", "practice_exam"] }, target: hours * 60 }]));
-    out.push(weekly(p, ws, cfg, "weekly_reviews", "Finish all scheduled academic reviews", "Clear your review backlog and sit one practice block.", "INT", [
+    out.push(weekly(ws, cfg, "intellectual", "weekly_study", `Study ${hours} focused hours`, "Spread across the week. Five 3-hour days beats one 15-hour panic.", "INT", [{ title: `${hours} hours of study`, tracker: { type: "activity_minutes", activities: ["study", "quiz", "practice_exam"] }, target: hours * 60 }]));
+    out.push(weekly(ws, cfg, "intellectual", "weekly_reviews", "Finish all scheduled academic reviews", "Clear your review backlog and sit one practice block.", "INT", [
       { title: "Complete scheduled reviews (confirm)", tracker: { type: "manual" }, target: 1 },
       { title: "One quiz or practice-exam block", tracker: { type: "activity_count", activities: ["quiz", "practice_exam"] }, target: 1 },
     ]));
   }
-  if (tracks(p, "STR")) {
-    const n = Math.min(6, scale(4, p, 1));
-    out.push(weekly(p, ws, cfg, "weekly_workouts", `Complete ${n} workouts`, "Strength sessions of 20+ minutes.", "STR", [{ title: `${n} workouts`, tracker: { type: "activity_count", activities: ["workout"] }, target: n }]));
-  }
-  if (tracks(p, "END")) {
-    const mi = scale(15, p, 1);
-    out.push(weekly(p, ws, cfg, "weekly_mileage", `Run ${mi} miles`, "Build the aerobic engine. Increase weekly volume gradually.", "END", [{ title: `${mi} miles`, tracker: { type: "activity_quantity", activities: ["run"] }, target: Math.round(miToKm(mi) * 100) / 100 }]));
-  }
-  out.push(weekly(p, ws, cfg, "weekly_dungeons", "Clear 3 dungeons", "Three focus sessions of any type.", "DIS", [{ title: "3 dungeons cleared", tracker: { type: "dungeon_clears" }, target: 3 }]));
-  out.push(weekly(p, ws, cfg, "weekly_improve", "Improve a personal metric", "Set a new personal record on any tracked performance metric.", "DIS", [{ title: "1 personal record", tracker: { type: "personal_records" }, target: 1 }]));
+  out.push(weekly(ws, cfg, "discipline", "weekly_flawless", "Clear every daily quest on 5 days", "Consistency is the real stat. Days waived with a recovery pass don't count.", "DIS", [{ title: "5 flawless days", tracker: { type: "perfect_days" }, target: 5 }]));
+  out.push(weekly(ws, cfg, "discipline", "weekly_dungeons", "Clear 3 dungeons", "Three focus sessions of any type.", "DIS", [{ title: "3 dungeons cleared", tracker: { type: "dungeon_clears" }, target: 3 }]));
+  out.push(weekly(ws, cfg, "discipline", "weekly_improve", "Improve a personal metric", "Set a new personal record on any tracked performance metric.", "DIS", [{ title: "1 personal record", tracker: { type: "personal_records" }, target: 1 }]));
   if (tracks(p, "WLT")) {
-    out.push(weekly(p, ws, cfg, "weekly_finance", "Financial check-in", "Review your budget and log your savings balance.", "WLT", [
+    out.push(weekly(ws, cfg, "financial", "weekly_finance", "Financial check-in", "Review your budget and log your savings balance.", "WLT", [
       { title: "Budget review", tracker: { type: "activity_count", activities: ["financial_review"] }, target: 1 },
       { title: "Log savings", tracker: { type: "metric_logged", metric: "savings" }, target: 1 },
     ]));
   }
   if (tracks(p, "CHA")) {
-    out.push(weekly(p, ws, cfg, "weekly_social", "Strengthen your bonds", "Two intentional social or professional connections.", "CHA", [{ title: "2 connections", tracker: { type: "activity_count", activities: ["social_connection", "networking", "communication", "mentoring", "volunteering"] }, target: 2 }]));
+    out.push(weekly(ws, cfg, "social", "weekly_social", "Strengthen your bonds", "Two intentional social or professional connections.", "CHA", [{ title: "2 connections", tracker: { type: "activity_count", activities: ["social_connection", "networking", "communication", "mentoring", "volunteering"] }, target: 2 }]));
   }
   return out;
 }
@@ -287,7 +309,7 @@ export function mainQuestDrafts(p: ProfileRow, date: ISODate, cfg: XpConfig): Qu
 
 // ─────────────────────────────── Emergency quests ───────────────────────────────
 
-/** Optional, time-limited challenges. Declining or expiring has no penalty. */
+/** Optional, time-limited challenges. Declining an offer is free; an accepted gate that closes unfinished is failed. */
 export function generateEmergencyQuests(p: ProfileRow, date: ISODate, now: Date, cfg: XpConfig, userId: string): QuestDraft[] {
   const out: QuestDraft[] = [];
   if (tracks(p, "INT") && hashString(`emg:${userId}:${date}`) % 3 !== 0) {
@@ -295,7 +317,8 @@ export function generateEmergencyQuests(p: ProfileRow, date: ISODate, now: Date,
       kind: "emergency",
       template_code: "emergency_study_block",
       title: "URGENT STUDY BLOCK",
-      description: "A gate has opened. Accept to start a 3-hour window to complete a 45-minute study block. Declining has no penalty.",
+      description: "A gate has opened. Accept to start a 3-hour window to complete a 45-minute study block. Declining is free; accepting and failing costs XP.",
+      config: { category: "intellectual", baseline: { windowHours: 3 } },
       attribute_code: "INT",
       difficulty: "B",
       period_start: date,
@@ -303,7 +326,6 @@ export function generateEmergencyQuests(p: ProfileRow, date: ISODate, now: Date,
       deadline: null, // set when accepted
       status: "offered",
       xp_reward: cfg.emergencyQuest,
-      config: { baseline: { windowHours: 3 } },
       objectives: [{ title: "45 minutes of study", tracker: { type: "activity_minutes", activities: ["study", "quiz", "practice_exam"] }, target: 45 }],
     });
   }
@@ -321,7 +343,7 @@ export function generateEmergencyQuests(p: ProfileRow, date: ISODate, now: Date,
       deadline: new Date(`${exam}T00:00:00Z`).toISOString(),
       status: "active",
       xp_reward: Math.max(cfg.emergencyQuest, 100),
-      config: {},
+      config: { category: "intellectual" },
       objectives: [
         { title: "Two quiz / practice-exam blocks", tracker: { type: "activity_count", activities: ["quiz", "practice_exam"] }, target: 2 },
         { title: "5 hours of exam-focused study", tracker: { type: "activity_minutes", activities: ["study", "quiz", "practice_exam"] }, target: 300 },

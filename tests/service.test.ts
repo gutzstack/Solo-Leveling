@@ -148,7 +148,7 @@ describe("quests", () => {
     expect(ledger).toHaveLength(1);
   });
 
-  it("only allows manual toggles on manual objectives and expires old quests without penalty", async () => {
+  it("only allows manual toggles on manual objectives and fails old quests with a penalty", async () => {
     const clock = testClock("2026-10-20T14:00:00.000Z");
     const { game } = await onboardedPlayer(db, clock);
     const snap = await game.snapshot();
@@ -161,7 +161,8 @@ describe("quests", () => {
     clock.set("2026-10-22T14:00:00.000Z");
     const later = await game.snapshot();
     const oldDaily = later.quests.find((q) => q.template_code === "daily_study" && q.period_start === "2026-10-20")!;
-    expect(oldDaily.status).toBe("expired");
+    expect(oldDaily.status).toBe("failed");
+    expect(later.xpLedger.some((x) => x.kind === "penalty" && x.source_id === oldDaily.id && x.amount < 0)).toBe(true);
     expect(later.quests.some((q) => q.template_code === "daily_study" && q.period_start === "2026-10-22")).toBe(true);
   });
 

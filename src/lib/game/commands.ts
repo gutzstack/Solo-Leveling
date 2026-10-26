@@ -2,6 +2,7 @@ import { z } from "zod";
 import { ACTIVITY_BY_TYPE } from "../domain/activities";
 import { isISODate, isValidTimeZone } from "../domain/dates";
 import { DUNGEON_BY_CODE } from "../domain/dungeons";
+import { RegimenSchema } from "../domain/regimen";
 import { ATTRIBUTE_CODES } from "../domain/types";
 
 const isoDate = z.string().refine(isISODate, "invalid date (YYYY-MM-DD)");
@@ -66,6 +67,7 @@ export const CommandSchema = z.discriminatedUnion("type", [
         comparison_preference: z.enum(["sex_matched", "all"]),
         hunter_weights: z.record(attribute, z.number().min(0).max(10)),
         xp_config: z.record(z.string(), z.unknown()),
+        regimen: RegimenSchema,
       })
       .partial(),
   }),
@@ -86,6 +88,7 @@ export const CommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("accept_quest"), questId: uuid }),
   z.object({ type: z.literal("dismiss_quest"), questId: uuid }),
   z.object({ type: z.literal("abandon_quest"), questId: uuid }),
+  z.object({ type: z.literal("use_recovery_pass") }),
   z.object({
     type: z.literal("create_custom_quest"),
     title: z.string().trim().min(3).max(120),
@@ -140,8 +143,9 @@ export type GameEvent =
   | { type: "chapter_complete"; questTitle: string; chapter: string; xp: number; final: boolean }
   | { type: "title_unlocked"; code: string; name: string }
   | { type: "dungeon_clear"; name: string; xp: number; boss: string | null; uninterrupted: boolean }
-  | { type: "dungeon_retreat"; name: string; creditedMinutes: number }
-  | { type: "daily_login"; streak: number; firstToday: boolean; newQuests: number }
+  | { type: "dungeon_retreat"; name: string; creditedMinutes: number; penalty?: number }
+  | { type: "daily_login"; streak: number; firstToday: boolean; newQuests: number; penalties?: { xp: number; failed: string[]; zone: boolean; zoneFailed: boolean } }
+  | { type: "penalty"; title: string; body: string; xp: number; zone: boolean }
   | { type: "duplicate_warning"; message: string }
   | { type: "info"; title: string; body: string };
 

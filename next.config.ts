@@ -4,6 +4,8 @@ const nextConfig: NextConfig = {
   // PGlite ships a WASM build of PostgreSQL that must be loaded with native Node `require`.
   serverExternalPackages: ["@electric-sql/pglite"],
   poweredByHeader: false,
+  // The local backend reads its SQL migrations at runtime, so they must ship with the server bundle.
+  outputFileTracingIncludes: { "/**": ["./supabase/**/*.sql"] },
   turbopack: {
     rules: {
       "*.css": {

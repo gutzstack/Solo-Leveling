@@ -6,6 +6,7 @@ import { useMemo } from "react";
 import { PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer, Tooltip } from "recharts";
 import { Button } from "@/components/ui/button";
 import { Tip } from "@/components/ui/switch";
+import { ActivityLogDialog } from "@/components/game/activity-log";
 import { GuidePanel } from "@/components/game/guide-panel";
 import { LogActivityDialog, LogMetricDialog } from "@/components/game/log-dialogs";
 import { StreakCalendar } from "@/components/game/streak-calendar";
@@ -13,6 +14,7 @@ import { EvidenceBadge, Panel, RankBadge, Stat, XpBar } from "@/components/syste
 import { Icon } from "@/components/system/icon";
 import { chartTheme } from "@/lib/client/chart-theme";
 import { useSnapshot } from "@/lib/client/use-game";
+import { ACTIVITY_BY_TYPE } from "@/lib/domain/activities";
 import { ATTRIBUTE_BY_CODE } from "@/lib/domain/attributes";
 import { computeGuideFacts } from "@/lib/game/guide";
 
@@ -185,12 +187,12 @@ export default function StatusPage() {
           <Panel title="Progress Calendar" subtitle={`${data.player.streak}-day streak`}>
             <StreakCalendar activeDays={data.activeDays} today={data.today} xpByDay={xpByDay} />
           </Panel>
-          <Panel title="Recent Activity">
+          <Panel title="Recent Activity" actions={<ActivityLogDialog />}>
             <ul className="divide-y divide-line/50">
               {data.activities.slice(-6).reverse().map((a) => (
                 <li key={a.id} className="flex items-center gap-3 py-2 text-sm">
                   <span className="text-accent"><ActivityIcon type={a.type} /></span>
-                  <span className="flex-1 text-fg">{a.type.replace(/_/g, " ")}</span>
+                  <span className="flex-1 text-fg">{ACTIVITY_BY_TYPE[a.type]?.name ?? a.type}</span>
                   <span className="font-mono text-xs text-faint">{a.duration_min ? `${Math.round(a.duration_min)} min · ` : ""}{a.occurred_on}</span>
                 </li>
               ))}
@@ -204,8 +206,7 @@ export default function StatusPage() {
 }
 
 function ActivityIcon({ type }: { type: string }) {
-  const icons: Record<string, string> = { study: "BookOpen", workout: "Dumbbell", run: "Footprints", reflection: "NotebookPen", flashcards: "Layers", mindfulness: "Flower2", practice_exam: "ClipboardCheck", mobility: "StretchHorizontal" };
-  return <Icon name={icons[type] ?? "Activity"} className="size-4" />;
+  return <Icon name={ACTIVITY_BY_TYPE[type]?.icon ?? "Activity"} className="size-4" />;
 }
 
 function MetricList({ items, icon: I, empty }: { items: { id: string; name: string; rank: string | null; evidence: "verified" | "estimated" | "personal" | null; attribute: string }[]; icon: React.ElementType; empty: string }) {

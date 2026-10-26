@@ -35,9 +35,17 @@ export async function handle<T>(fn: () => Promise<T>): Promise<NextResponse> {
 export function assertSameOrigin(req: Request) {
   const origin = req.headers.get("origin");
   if (!origin) return; // non-browser clients (and same-origin GET-initiated forms in some browsers)
-  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
+  // Behind proxies (Codespaces, tunnels, load balancers) the public host may arrive in either header.
+  const hosts = new Set([req.headers.get("x-forwarded-host"), req.headers.get("host")].flatMap((h) => (h ? h.split(",").map((x) => x.trim().toLowerCase()) : [])));
+  for (const extra of (process.env.ALLOWED_ORIGINS ?? "").split(",").map((x) => x.trim()).filter(Boolean)) {
+    try {
+      hosts.add(new URL(extra).host.toLowerCase());
+    } catch {
+      /* ignore malformed entries */
+    }
+  }
   try {
-    if (new URL(origin).host !== host) throw new AuthError("Cross-origin request blocked.", 403);
+    if (!hosts.has(new URL(origin).host.toLowerCase())) throw new AuthError("Cross-origin request blocked. If you use a proxy or custom domain, add it to ALLOWED_ORIGINS.", 403);
   } catch (e) {
     if (e instanceof AuthError) throw e;
     throw new AuthError("Bad origin.", 403);

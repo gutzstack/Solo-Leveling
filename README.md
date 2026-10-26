@@ -27,7 +27,7 @@ scrypt-hashed passwords and HMAC-signed session cookies.
 3. You land on **STATUS**. Log activities and measurements, run dungeons, complete quests.
 
 ```bash
-npm test               # 73 unit + integration + RLS tests (vitest, real PostgreSQL in-memory)
+npm test               # 75 unit + integration + RLS tests (vitest, real PostgreSQL in-memory)
 npm run typecheck && npm run lint
 npm run build && npm start
 BASE_URL=http://localhost:3000 npm run test:e2e   # Playwright smoke test of every page (desktop + mobile)
@@ -162,6 +162,20 @@ for more NHANES variables, then run the tests.
 PGlite needs a persistent, writable disk and a **single** Node process (it holds an exclusive
 lock). Serverless platforms need the Supabase backend instead.
 
+## Troubleshooting sign-in
+
+* **Signed up but bounced back to the gate:** this was a bug in the first build. Session cookies
+  were always marked `Secure` in production, so browsers discarded them when the app was opened over
+  plain HTTP by IP address or LAN name (e.g. `http://192.168.1.20:3000` from a phone). Cookies are
+  now `Secure` only when the request arrived over HTTPS (override with `COOKIE_SECURE`), and the
+  gate page tells you explicitly if the browser still refuses the cookie (private mode or strict
+  tracking protection).
+* **"Cross-origin request blocked":** you're behind a proxy or custom domain that rewrites the
+  `Host` header. Add the public URL to `ALLOWED_ORIGINS`.
+* **Serverless hosts (Vercel/Netlify) without Supabase:** the local database falls back to `/tmp`,
+  which is temporary and not shared between instances, and the gate page shows a warning.
+  Configure Supabase for real deployments.
+
 ## Remaining limitations
 
 * Only six NHANES-based measures have population percentiles; most performance metrics use game
@@ -172,8 +186,8 @@ lock). Serverless platforms need the Supabase backend instead.
 * The LLM guide path was type-checked but not called live (no API key here); the deterministic
   guide is always available.
 * Third-party integrations (Apple Health, Strava, Google Calendar, LMS) are not implemented.
-* Deleting an activity reverses its XP but not quests/achievements it already completed
-  (achievements are permanent once earned).
+* Deleting an activity (STATUS → Recent Activity → Full log) reverses its XP but not quests or
+  achievements it already completed (achievements are permanent once earned).
 * Main story arcs use fixed milestone targets (e.g. sub-18 5K, +10 lb lean mass). Edit
   `src/lib/game/quest-templates.ts` to change them; there's no in-app arc editor yet.
 * No push notifications; reminders appear in-app.

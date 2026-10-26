@@ -33,7 +33,7 @@ export interface PlayerSnapshot {
   activeSession: (DungeonSessionRow & { activeSecondsNow: number }) | null;
   recentSessions: DungeonSessionRow[];
   activities: ActivityRow[];
-  xpLedger: { id: string; amount: number; kind: string; attribute: string | null; reason: string; awarded_on: string; created_at: string; reversed: boolean }[];
+  xpLedger: { id: string; amount: number; kind: string; attribute: string | null; reason: string; source_id: string | null; awarded_on: string; created_at: string; reversed: boolean }[];
   activeDays: string[];
   notifications: NotificationRow[];
   sources: BenchmarkSource[];
@@ -71,7 +71,7 @@ export function buildSnapshot(data: GameData, ev: Evaluation, backend: "local" |
     activeSession: ev.activeSession,
     recentSessions: data.sessions.slice(-30).reverse(),
     activities: data.activities,
-    xpLedger: data.xp.map((x) => ({ id: x.id, amount: x.amount, kind: x.kind, attribute: x.attribute_code, reason: x.reason, awarded_on: x.awarded_on, created_at: x.created_at, reversed: reversed.has(x.id) })),
+    xpLedger: data.xp.map((x) => ({ id: x.id, amount: x.amount, kind: x.kind, attribute: x.attribute_code, reason: x.reason, source_id: x.source_id, awarded_on: x.awarded_on, created_at: x.created_at, reversed: reversed.has(x.id) })),
     activeDays: [...ev.stats.activeDays].sort(),
     notifications: data.notifications,
     sources: BENCHMARK_SOURCES,

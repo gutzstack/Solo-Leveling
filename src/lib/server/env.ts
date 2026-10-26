@@ -16,8 +16,19 @@ export function backendKind(): "supabase" | "local" {
   return supabaseConfig() ? "supabase" : "local";
 }
 
+/** Serverless hosts (Vercel, Netlify, AWS Lambda) only allow writes under /tmp, which is ephemeral. */
+export function isServerless(): boolean {
+  return Boolean(process.env.VERCEL || process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME);
+}
+
 export function localDataDir(): string {
-  return process.env.LOCAL_DB_DIR ?? ".data/pglite";
+  if (process.env.LOCAL_DB_DIR) return process.env.LOCAL_DB_DIR;
+  return isServerless() ? "/tmp/system-irl/pglite" : ".data/pglite";
+}
+
+/** True when the local backend can't keep data between restarts (serverless /tmp storage). */
+export function storageIsEphemeral(): boolean {
+  return !supabaseConfig() && isServerless() && !process.env.LOCAL_DB_DIR;
 }
 
 export function aiConfig(): { apiKey: string; model: string } | null {

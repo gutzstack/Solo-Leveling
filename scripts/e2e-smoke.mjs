@@ -64,6 +64,22 @@ try {
     await page.getByText("[QUEST COMPLETE]").first().waitFor({ timeout: 15000 });
   });
 
+  await step("activity log: delete reverses XP", async () => {
+    await page.goto(BASE + "/status");
+    await page.getByRole("button", { name: "Full log" }).waitFor({ timeout: 20000 });
+    for (let i = 0; i < 6; i++) {
+      const overlay = page.getByText("Tap to continue");
+      if (!(await overlay.count())) break;
+      await overlay.first().click({ force: true, timeout: 3000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByRole("button", { name: "Full log" }).click();
+    page.once("dialog", (d) => d.accept());
+    await page.getByRole("button", { name: /^Delete Focused study session/ }).first().click();
+    await page.getByText("Nothing logged yet.", { exact: true }).waitFor({ timeout: 15000 });
+    await page.keyboard.press("Escape");
+  });
+
   const pages = ["attributes", "attributes/END", "quests", "dungeons", "skills", "achievements", "analytics", "rankings", "system"];
   for (const p of pages) {
     await step(`page /${p}`, async () => {

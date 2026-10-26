@@ -20,11 +20,22 @@ export default function Gate() {
   const [busy, setBusy] = useState(false);
   const [backend, setBackend] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [ephemeral, setEphemeral] = useState(false);
+
+  /** Confirm the browser kept the session cookie before navigating into the game. */
+  async function sessionStuck(): Promise<boolean> {
+    const me = await api<{ user: { id: string } | null }>("/api/auth/me");
+    if (me.user) return true;
+    setError("Your account was accepted, but this browser didn't keep the session cookie, so you weren't signed in. Allow cookies for this site (private/incognito modes and strict tracking protection can block them), or open the app via the same address you started it with, then sign in again.");
+    play("error");
+    return false;
+  }
 
   useEffect(() => {
-    api<{ user: { id: string } | null; backend: string }>("/api/auth/me")
+    api<{ user: { id: string } | null; backend: string; ephemeral?: boolean }>("/api/auth/me")
       .then((r) => {
         setBackend(r.backend);
+        setEphemeral(Boolean(r.ephemeral));
         if (r.user) router.replace(new URLSearchParams(window.location.search).get("next") ?? "/status");
       })
       .catch(() => setBackend("unknown"));
@@ -42,10 +53,12 @@ export default function Gate() {
           setMode("login");
           return;
         }
+        if (!(await sessionStuck())) return;
         play("levelup");
         router.replace("/awakening");
       } else {
         await api("/api/auth/login", { json: { email, password } });
+        if (!(await sessionStuck())) return;
         play("notify");
         router.replace(new URLSearchParams(window.location.search).get("next") ?? "/status");
       }
@@ -112,6 +125,11 @@ export default function Gate() {
           )}
         </AnimatePresence>
 
+        {ephemeral ? (
+          <p role="note" className="mt-6 rounded-lg border border-amber-400/40 bg-amber-500/10 p-3 text-center text-xs text-amber-100 light:text-amber-900">
+            Temporary demo storage: this host is serverless, so accounts and progress can disappear when the server restarts. Configure Supabase (see README) for permanent storage.
+          </p>
+        ) : null}
         <p className="mt-6 text-center text-xs text-faint">
           {backend === "local"
             ? "Local demo mode: accounts and data live in a PostgreSQL database (PGlite) on this server. Configure Supabase for hosted auth."

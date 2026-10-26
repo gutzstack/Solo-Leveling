@@ -3,7 +3,7 @@ import { createHmac, randomBytes, scrypt as scryptCb, timingSafeEqual } from "no
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { getLocalDb, supabaseUserClient } from "./db";
 import { localDataDir, supabaseConfig } from "./env";
 
@@ -80,11 +80,23 @@ async function verifyPassword(password: string, stored: string): Promise<boolean
   return timingSafeEqual(expected, actual);
 }
 
+/**
+ * Mark the cookie Secure only when the request actually arrived over HTTPS. Browsers silently drop
+ * Secure cookies sent over plain HTTP (except on localhost), which made sign-in impossible when the
+ * app was opened by IP address or LAN hostname. COOKIE_SECURE=always|never overrides detection.
+ */
+export function shouldUseSecureCookie(proto: string | null, mode = process.env.COOKIE_SECURE): boolean {
+  if (mode === "always") return true;
+  if (mode === "never" || process.env.INSECURE_COOKIES === "1") return false;
+  return (proto ?? "").split(",")[0].trim().toLowerCase() === "https";
+}
+
 async function setLocalCookie(userId: string) {
+  const proto = (await headers()).get("x-forwarded-proto");
   (await cookies()).set(LOCAL_COOKIE, makeSessionToken(userId), {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production" && process.env.INSECURE_COOKIES !== "1",
+    secure: shouldUseSecureCookie(proto),
     path: "/",
     maxAge: SESSION_DAYS * 86400,
   });
@@ -113,7 +125,11 @@ export async function signUp(emailRaw: unknown, passwordRaw: unknown): Promise<{
   const { email, password } = validateCredentials(emailRaw, passwordRaw);
   if (supabaseConfig()) {
     const sb = await supabaseUserClient();
-    const { data, error } = await sb.auth.signUp({ email, password });
+    const h = await headers();
+    const host = h.get("x-forwarded-host") ?? h.get("host");
+    const proto = (h.get("x-forwarded-proto") ?? "https").split(",")[0].trim();
+    const emailRedirectTo = host ? `${proto}://${host}/auth/callback` : undefined;
+    const { data, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo } });
     if (error) throw new AuthError(error.message);
     return { user: data.session && data.user ? { id: data.user.id, email: data.user.email ?? email } : null, needsConfirmation: !data.session };
   }

@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
  * Route protection. A cheap presence check on the session cookie: the API layer re-validates
  * every request (signature or Supabase JWT) before touching data.
  */
-const PUBLIC = new Set(["/", "/login"]);
+const PUBLIC = new Set(["/", "/login", "/auth/callback"]);
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;

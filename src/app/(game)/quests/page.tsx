@@ -11,7 +11,8 @@ import { useCommand, useSnapshot } from "@/lib/client/use-game";
 import { ACTIVITIES } from "@/lib/domain/activities";
 import { ATTRIBUTES } from "@/lib/domain/attributes";
 import { TITLE_BY_CODE } from "@/lib/domain/titles";
-import type { AttributeCode } from "@/lib/domain/types";
+import { displayUnit, parseDisplayInput } from "@/lib/domain/units";
+import type { AttributeCode, UnitKind } from "@/lib/domain/types";
 import type { QuestView } from "@/lib/game/evaluate";
 import { cn } from "@/lib/utils";
 
@@ -225,14 +226,22 @@ function CustomQuestDialog({ children }: { children: React.ReactNode }) {
   const [objs, setObjs] = useState<ObjDraft[]>([{ id: 1, title: "", type: "activity_minutes", activity: "study", metric: "run_5k", direction: "lower", target: "60" }]);
   const [error, setError] = useState<string | null>(null);
   const manualMetrics = (data?.metrics ?? []).filter((m) => m.input === "manual");
+  const units = data?.settings.unit_system ?? "imperial";
+  const targetHint = (o: ObjDraft) => {
+    const m = manualMetrics.find((x) => x.id === o.metric);
+    if (!m) return "Target";
+    return m.unit === "duration" ? "Target time (e.g. 18:00)" : `Target (${displayUnit(m.unit as UnitKind, units).label || "value"})`;
+  };
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     const objectives = [];
     for (const o of objs) {
-      const target = Number(o.target);
-      if (o.type !== "manual" && !(target > 0)) return setError("Every objective needs a positive target.");
+      // metric targets are entered in display units (lb, mi, m:ss…) and stored canonically
+      const mdef = manualMetrics.find((m) => m.id === o.metric);
+      const target = o.type === "metric_reach" && mdef ? (parseDisplayInput(mdef.unit as UnitKind, o.target, units) ?? NaN) : Number(o.target);
+      if (o.type !== "manual" && !(target > 0)) return setError(o.type === "metric_reach" ? "Enter the metric target in the shown units (times as m:ss)." : "Every objective needs a positive target.");
       const tracker =
         o.type === "manual" ? { type: "manual" as const } : o.type === "metric_reach" ? { type: "metric_reach" as const, metric: o.metric, target, direction: o.direction } : { type: o.type, activities: [o.activity] };
       objectives.push({ title: o.title || autoTitle(o), tracker, target: o.type === "manual" ? 1 : target });
@@ -248,7 +257,10 @@ function CustomQuestDialog({ children }: { children: React.ReactNode }) {
     if (o.type === "activity_minutes") return `${o.target} min of ${act.toLowerCase()}`;
     if (o.type === "activity_count") return `${o.target}× ${act.toLowerCase()}`;
     if (o.type === "activity_quantity") return `${o.target} ${act.toLowerCase()} (quantity)`;
-    if (o.type === "metric_reach") return `Reach ${o.target} on ${manualMetrics.find((m) => m.id === o.metric)?.name ?? o.metric}`;
+    if (o.type === "metric_reach") {
+      const m = manualMetrics.find((x) => x.id === o.metric);
+      return `Reach ${o.target}${m && m.unit !== "duration" ? ` ${displayUnit(m.unit as UnitKind, units).label}` : ""} on ${m?.name ?? o.metric}`;
+    }
     return "Complete (confirm manually)";
   }
 
@@ -318,7 +330,7 @@ function CustomQuestDialog({ children }: { children: React.ReactNode }) {
                   <Trash2 />
                 </Button>
                 {o.type !== "manual" ? (
-                  <Input aria-label="Target" type="number" step="any" min={0} value={o.target} onChange={(e) => setObjs((l) => l.map((x) => (x.id === o.id ? { ...x, target: e.target.value } : x)))} placeholder={o.type === "metric_reach" ? "Target (canonical units: kg, km, s)" : "Target"} />
+                  <Input aria-label="Target" type={o.type === "metric_reach" ? "text" : "number"} inputMode="decimal" step="any" min={0} value={o.target} onChange={(e) => setObjs((l) => l.map((x) => (x.id === o.id ? { ...x, target: e.target.value } : x)))} placeholder={o.type === "metric_reach" ? targetHint(o) : "Target"} />
                 ) : null}
                 {o.type === "metric_reach" ? (
                   <Select aria-label="Direction" value={o.direction} onChange={(e) => setObjs((l) => l.map((x) => (x.id === o.id ? { ...x, direction: e.target.value as "higher" | "lower" } : x)))}>

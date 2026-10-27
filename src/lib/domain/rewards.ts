@@ -46,6 +46,8 @@ export function questGold(q: { kind: string; template_code: string }): number {
   }
 }
 export const MAIN_CHAPTER_GOLD = 300;
+/** Gold for clearing a dungeon, by difficulty (same daily limit as the XP clear bonus). */
+export const DUNGEON_CLEAR_GOLD: Record<"E" | "D" | "C" | "B" | "A" | "S", number> = { E: 5, D: 10, C: 15, B: 25, A: 40, S: 60 };
 export const DAILY_ALL_GOLD = 25;
 
 /** Consecutive perfect days → gold multiplier. */

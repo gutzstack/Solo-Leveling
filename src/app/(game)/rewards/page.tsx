@@ -46,6 +46,7 @@ export default function RewardsPage() {
           <ul className="mt-4 space-y-1 text-xs text-dim">
             <li>Training regimen: 50 · other dailies: 10 · weekly: 75</li>
             <li>Emergency: 40 · custom: 20 · story chapter: {MAIN_CHAPTER_GOLD}</li>
+            <li>Dungeon clears: 5 (E) to 60 (S), up to 4 a day</li>
             <li>All dailies cleared: +{DAILY_ALL_GOLD} and a reward chest</li>
             <li className="text-red-300/90 light:text-red-700">Failed quests cost gold too.</li>
           </ul>

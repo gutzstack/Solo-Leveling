@@ -11,6 +11,7 @@ import { play, startAmbient, stopAmbient } from "@/lib/client/sound";
 import { useCommand, useSnapshot } from "@/lib/client/use-game";
 import { ACTIVITIES, ACTIVITY_BY_TYPE } from "@/lib/domain/activities";
 import { CLEAR_THRESHOLD, DUNGEONS, DUNGEON_BY_CODE, DUNGEON_CLEAR_XP, POMODORO, type DungeonDef } from "@/lib/domain/dungeons";
+import { DUNGEON_CLEAR_GOLD } from "@/lib/domain/rewards";
 import { displayUnit, formatDuration } from "@/lib/domain/units";
 
 export default function DungeonsPage() {
@@ -71,6 +72,7 @@ function DungeonCard({ d, disabled }: { d: DungeonDef; disabled: boolean }) {
       <div className="flex flex-wrap gap-1.5">
         <Pill>{d.defaultMinutes} min</Pill>
         <Pill>clear +{DUNGEON_CLEAR_XP[d.difficulty]} XP</Pill>
+        <Pill className="border-amber-400/50 text-amber-300 light:text-amber-800">+{DUNGEON_CLEAR_GOLD[d.difficulty]} gold</Pill>
         <Pill>{ACTIVITY_BY_TYPE[d.activity].name}</Pill>
         {d.modes.includes("pomodoro") ? <Pill>Pomodoro</Pill> : null}
       </div>

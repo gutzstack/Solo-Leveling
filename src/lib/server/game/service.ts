@@ -4,7 +4,7 @@ import { ATTRIBUTE_BY_CODE } from "../../domain/attributes";
 import { addDays, daysBetween, localDate, weekStart, type ISODate } from "../../domain/dates";
 import { activeSecondsNow, canClear, creditedMinutes, DUNGEON_BY_CODE, DUNGEON_CLEAR_XP, DUNGEON_DAILY_BONUS_CAP, RETREAT_CREDIT_MINUTES } from "../../domain/dungeons";
 import { METRIC_BY_ID, type MetricDef } from "../../domain/metrics";
-import { chestContents, CHEST_INFO, DAILY_ALL_GOLD, ITEM_INFO, MAIN_CHAPTER_GOLD, questGold, rollChestRarity, streakMultiplier, SYSTEM_SHOP, type ItemCode } from "../../domain/rewards";
+import { chestContents, CHEST_INFO, DAILY_ALL_GOLD, DUNGEON_CLEAR_GOLD, ITEM_INFO, MAIN_CHAPTER_GOLD, questGold, rollChestRarity, streakMultiplier, SYSTEM_SHOP, type ItemCode } from "../../domain/rewards";
 import { DUNGEON_RETREAT_PENALTY, flatPenalty, MAX_BACKFILL_DAYS, PENALTY_MULTIPLIER, PENALTY_ZONE_FAIL_FACTOR, progressRegimen, questPenalty, resolveRegimen } from "../../domain/regimen";
 import { compareRanks } from "../../domain/ranks";
 import { TITLE_BY_CODE } from "../../domain/titles";
@@ -256,11 +256,11 @@ export class GameService {
   }
 
   /** Gold for a completed quest or chapter, times the perfect-day streak multiplier. */
-  private async questGoldAward(data: GameData, events: GameEvent[], base: number, sourceId: string, reason: string, key: string) {
+  private async questGoldAward(data: GameData, events: GameEvent[], base: number, sourceId: string, reason: string, key: string, source: { kind: GoldRow["kind"]; type: string } = { kind: "quest", type: "quest" }) {
     if (!base || !(await rewardsEnabled(this.db))) return;
     const mult = streakMultiplier(perfectStreak(data, data.today));
     const amount = Math.round(base * mult);
-    if (await this.gold(data, { amount, kind: "quest", sourceType: "quest", sourceId, reason: mult > 1 ? `${reason} (×${mult} streak)` : reason, key: this.goldRekey(data, key, sourceId) })) events.push({ type: "gold", amount, reason });
+    if (await this.gold(data, { amount, kind: source.kind, sourceType: source.type, sourceId, reason: mult > 1 ? `${reason} (×${mult} streak)` : reason, key: this.goldRekey(data, key, sourceId) })) events.push({ type: "gold", amount, reason });
   }
 
   private goldRekey(data: GameData, key: string, sourceId: string): string {
@@ -1119,6 +1119,8 @@ export class GameService {
       const attr = ACTIVITY_BY_TYPE[activity].attribute;
       await this.award({ amount: bonus, kind: "dungeon", attribute: attr, sourceType: "dungeon", sourceId: s.id, reason: `Dungeon cleared: ${def.name}`, key: `dungeon_clear:${s.id}`, day: data.today });
       await this.svc.update("dungeon_sessions", { id: s.id, user_id: this.userId }, { xp_awarded: bonus });
+      const gold = DUNGEON_CLEAR_GOLD[def.difficulty] + (uninterrupted && def.code === "deep_focus" ? Math.round(DUNGEON_CLEAR_GOLD[def.difficulty] * 0.2) : 0);
+      await this.questGoldAward(data, events, gold, s.id, `Dungeon cleared: ${def.name}`, `gold:dungeon:${s.id}`, { kind: "bonus", type: "dungeon" });
     } else events.push({ type: "xp_withheld", reason: `Dungeon clear bonus is limited to ${DUNGEON_DAILY_BONUS_CAP} per day; activity XP still applies.` });
     events.push({ type: "dungeon_clear", name: def.name, xp: bonus, boss: def.boss ?? null, uninterrupted });
     await this.notify("dungeon", "[DUNGEON CLEARED]", `${def.name} cleared in ${minutes} minutes${bonus ? ` (+${bonus} XP)` : ""}.`);

@@ -92,6 +92,17 @@ describe("gold, chests and the streak multiplier", () => {
   });
 });
 
+describe("dungeon gold", () => {
+  it("clearing a dungeon pays gold by difficulty", async () => {
+    const { game, clock } = await physicalOnly();
+    const start = await game.execute({ type: "start_dungeon", code: "study_gate", minutes: 30, mode: "focus", objective: "", idempotencyKey: key("d") });
+    clock.advance(30 * 60_000);
+    const done = await game.execute({ type: "complete_dungeon", sessionId: start.snapshot.activeSession!.id });
+    expect(done.events).toContainEqual(expect.objectContaining({ type: "gold", amount: 15, reason: "Dungeon cleared: Study Dungeon" }));
+    expect(done.snapshot.rewards.ledger.find((g) => g.source_type === "dungeon")?.amount).toBe(15);
+  });
+});
+
 describe("shop and items", () => {
   it("buys the player's own rewards only with enough gold", async () => {
     const { game, userId } = await physicalOnly();

@@ -151,6 +151,8 @@ export async function signIn(emailRaw: unknown, passwordRaw: unknown): Promise<S
   if (supabaseConfig()) {
     const sb = await supabaseUserClient();
     const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    if (error && (error.code === "email_not_confirmed" || /not confirmed/i.test(error.message)))
+      throw new AuthError("This account hasn't confirmed its email yet. Click the link in the confirmation email (check spam), or ask the site owner to confirm it in Supabase.", 403);
     if (error || !data.user) throw new AuthError("Invalid email or password.", 401);
     return { id: data.user.id, email: data.user.email ?? email };
   }

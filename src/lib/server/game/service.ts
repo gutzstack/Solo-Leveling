@@ -4,7 +4,8 @@ import { ATTRIBUTE_BY_CODE } from "../../domain/attributes";
 import { addDays, daysBetween, localDate, weekStart, type ISODate } from "../../domain/dates";
 import { activeSecondsNow, canClear, creditedMinutes, DUNGEON_BY_CODE, DUNGEON_CLEAR_XP, DUNGEON_DAILY_BONUS_CAP, RETREAT_CREDIT_MINUTES } from "../../domain/dungeons";
 import { METRIC_BY_ID, type MetricDef } from "../../domain/metrics";
-import { DUNGEON_RETREAT_PENALTY, flatPenalty, MAX_BACKFILL_DAYS, PENALTY_ZONE_FAIL_FACTOR, progressRegimen, questPenalty, resolveRegimen } from "../../domain/regimen";
+import { chestContents, CHEST_INFO, DAILY_ALL_GOLD, ITEM_INFO, MAIN_CHAPTER_GOLD, questGold, rollChestRarity, streakMultiplier, SYSTEM_SHOP, type ItemCode } from "../../domain/rewards";
+import { DUNGEON_RETREAT_PENALTY, flatPenalty, MAX_BACKFILL_DAYS, PENALTY_MULTIPLIER, PENALTY_ZONE_FAIL_FACTOR, progressRegimen, questPenalty, resolveRegimen } from "../../domain/regimen";
 import { compareRanks } from "../../domain/ranks";
 import { TITLE_BY_CODE } from "../../domain/titles";
 import type { AttributeCode, Rank } from "../../domain/types";
@@ -12,12 +13,12 @@ import { evaluatePersonalRecord, findLikelyDuplicate, planActivityXp, planMetric
 import { CommandSchema, ImportSchema, type Command, type GameEvent } from "../../game/commands";
 import { evaluate, planAwards, type Evaluation } from "../../game/evaluate";
 import { customMetricDef } from "../../game/metric-state";
-import { objectiveProgress } from "../../game/quest-progress";
+import { objectiveProgress, perfectStreak } from "../../game/quest-progress";
 import { formatRunDistance, generateDailyQuests, generateEmergencyQuests, generateWeeklyQuests, mainQuestDrafts, penaltyZoneDraft, type QuestDraft } from "../../game/quest-templates";
 import { computeStats } from "../../game/stats";
-import type { ActivityRow, CustomMetricRow, DungeonSessionRow, GameData, MetricEntryRow, ObjectiveRow, ProfileRow, QuestRow, SettingsRow, TrialResultRow } from "../../game/rows";
+import type { ActivityRow, CustomMetricRow, DungeonSessionRow, GameData, GoldRow, InventoryRow, MetricEntryRow, ObjectiveRow, ProfileRow, QuestRow, SettingsRow, ShopRewardRow, TrialResultRow } from "../../game/rows";
 import { UniqueViolationError, type Database, type DataClient } from "../db/types";
-import { applyPenalty, penaltiesEnabled } from "./penalty";
+import { applyPenalty, penaltiesEnabled, rewardsEnabled } from "./penalty";
 import { buildSnapshot, type PlayerSnapshot } from "./snapshot";
 
 /** Regimen quests created before this were generated with the original 100/100/100/5 km defaults. */
@@ -61,6 +62,9 @@ export class GameService {
     private readonly clock: () => Date = () => new Date(),
   ) {}
 
+  /** Day a Double-XP Elixir is active on (refreshed on every load). */
+  private elixirDay: ISODate | null = null;
+
   private get u(): DataClient {
     return this.db.user(this.userId);
   }
@@ -101,12 +105,22 @@ export class GameService {
       u.select<{ id: string }>("question_items", { eq: { ...uid, flagged: false } }),
     ]);
     if (!profiles[0] || !settings[0]) throw new GameError("Player profile missing", 500);
+    const rewards = await rewardsEnabled(this.db);
+    const [gold, inventory, shopRewards] = rewards
+      ? await Promise.all([
+          u.select<GoldRow>("gold_ledger", { eq: uid, order: [{ column: "created_at" }] }),
+          u.select<InventoryRow>("inventory_items", { eq: uid, order: [{ column: "acquired_at" }] }),
+          u.select<ShopRewardRow>("shop_rewards", { eq: uid, order: [{ column: "price" }] }),
+        ])
+      : [[], [], []];
     const now = this.clock();
     const profile = profiles[0];
+    const today = localDate(now, profile.timezone);
+    this.elixirDay = inventory.some((i) => i.item_code === "xp_elixir" && i.used_on === today) ? today : null;
     return {
       userId: this.userId,
       now,
-      today: localDate(now, profile.timezone),
+      today,
       profile,
       settings: settings[0],
       customMetrics,
@@ -128,6 +142,9 @@ export class GameService {
         return rest;
       }),
       questionCount: questions.length,
+      gold,
+      inventory,
+      shopRewards,
     };
   }
 
@@ -136,6 +153,7 @@ export class GameService {
   /** Idempotent XP award. Returns true only if this call created the transaction. */
   private async award(t: { amount: number; kind: XpKind; attribute: AttributeCode | null; sourceType: string; sourceId: string | null; reason: string; key: string; day: ISODate }): Promise<boolean> {
     if (t.amount <= 0) return false;
+    if (this.elixirDay === t.day) t = { ...t, amount: t.amount * 2, reason: `${t.reason} (×2 elixir)` };
     const rows = await this.svc.insertIgnore(
       "player_xp",
       { user_id: this.userId, amount: Math.round(t.amount), kind: t.kind, attribute_code: t.attribute, source_type: t.sourceType, source_id: t.sourceId, reason: t.reason, idempotency_key: t.key, awarded_on: t.day },
@@ -166,6 +184,14 @@ export class GameService {
       if (progress.every((x) => x.done)) continue;
       await this.reverseFor(data, q.id, "Quest progress removed");
       if (q.kind === "daily") await this.reverseFor(data, `daily_all:${q.period_start}`, "Daily quest re-opened");
+      for (const src of q.kind === "daily" ? [q.id, `daily_all:${q.period_start}`] : [q.id]) {
+        for (const g of data.gold.filter((x) => x.source_id === src && x.amount > 0))
+          await this.gold(data, { amount: -g.amount, kind: "reversal", sourceType: g.source_type, sourceId: src, reason: "Quest re-opened", key: `reversal:${g.id}` });
+      }
+      if (q.kind === "daily") {
+        const chest = data.inventory.find((i) => i.item_code === "chest" && i.idempotency_key === `chest:${q.period_start}` && !i.used_at);
+        if (chest) await this.svc.delete("inventory_items", { id: chest.id, user_id: this.userId });
+      }
       await this.svc.delete("quest_completions", { quest_id: q.id, user_id: this.userId, chapter: 0 });
       await this.svc.update("quests", { id: q.id, user_id: this.userId }, { status: "active", completed_at: null });
       for (const x of progress) if (!x.done && x.o.completed_at) await this.svc.update("quest_objectives", { id: x.o.id, user_id: this.userId }, { completed_at: null });
@@ -210,8 +236,71 @@ export class GameService {
     return created;
   }
 
-  private async penalize(data: GameData, p: { amount: number; attribute: AttributeCode | null; sourceType: string; sourceId: string | null; reason: string; key: string }): Promise<boolean> {
-    return applyPenalty(this.svc, this.userId, { ...p, day: data.today });
+  // ───────────────────────────── Gold & items ─────────────────────────────
+
+  private async goldBalance(): Promise<number> {
+    const rows = await this.svc.select<{ amount: number }>("gold_ledger", { eq: { user_id: this.userId } });
+    return Math.max(0, rows.reduce((a, r) => a + r.amount, 0));
+  }
+
+  /** Idempotent gold grant (or spend, with a negative amount). Returns true if recorded. */
+  private async gold(data: GameData, g: { amount: number; kind: GoldRow["kind"]; sourceType: string; sourceId: string | null; reason: string; key: string }): Promise<boolean> {
+    const amount = Math.round(g.amount);
+    if (!amount) return false;
+    const rows = await this.svc.insertIgnore(
+      "gold_ledger",
+      { user_id: this.userId, amount, kind: g.kind, source_type: g.sourceType, source_id: g.sourceId, reason: g.reason.slice(0, 200), idempotency_key: g.key, awarded_on: data.today },
+      ["user_id", "idempotency_key"],
+    );
+    return rows.length > 0;
+  }
+
+  /** Gold for a completed quest or chapter, times the perfect-day streak multiplier. */
+  private async questGoldAward(data: GameData, events: GameEvent[], base: number, sourceId: string, reason: string, key: string) {
+    if (!base || !(await rewardsEnabled(this.db))) return;
+    const mult = streakMultiplier(perfectStreak(data, data.today));
+    const amount = Math.round(base * mult);
+    if (await this.gold(data, { amount, kind: "quest", sourceType: "quest", sourceId, reason: mult > 1 ? `${reason} (×${mult} streak)` : reason, key: this.goldRekey(data, key, sourceId) })) events.push({ type: "gold", amount, reason });
+  }
+
+  private goldRekey(data: GameData, key: string, sourceId: string): string {
+    const n = data.gold.filter((g) => g.kind === "reversal" && g.source_id === sourceId).length;
+    return n ? `${key}:${n}` : key;
+  }
+
+  private async grantItem(code: InventoryRow["item_code"], i: { source: InventoryRow["source"]; sourceId: string | null; key: string; rarity?: InventoryRow["rarity"]; data?: Record<string, unknown> }): Promise<InventoryRow | null> {
+    const rows = await this.svc.insertIgnore<InventoryRow>("inventory_items", { user_id: this.userId, item_code: code, rarity: i.rarity ?? null, source: i.source, source_id: i.sourceId, data: i.data ?? {}, idempotency_key: i.key }, ["user_id", "idempotency_key"]);
+    return rows[0] ?? null;
+  }
+
+  /** Marks an unused item as used; false if it was already used (e.g. a double click). */
+  private async consumeItem(data: GameData, item: InventoryRow, extra: Record<string, unknown> = {}): Promise<boolean> {
+    const rows = await this.svc.update("inventory_items", { id: item.id, user_id: this.userId, used_at: null }, { used_at: data.now.toISOString(), used_on: data.today, data: { ...item.data, ...extra } });
+    return rows.length > 0;
+  }
+
+  /**
+   * Applies an XP (and optional gold) penalty, unless a Penalty Shield absorbs it. Idempotent per
+   * key. Returns "applied", "shielded", or null when it was already handled.
+   */
+  private async penalize(data: GameData, p: { amount: number; attribute: AttributeCode | null; sourceType: string; sourceId: string | null; reason: string; key: string; gold?: number }, events?: GameEvent[]): Promise<"applied" | "shielded" | null> {
+    if (data.xp.some((x) => x.idempotency_key === p.key)) return null;
+    if (await rewardsEnabled(this.db)) {
+      const fresh = await this.svc.select<InventoryRow>("inventory_items", { eq: { user_id: this.userId, item_code: "penalty_shield" } });
+      if (fresh.some((i) => i.data && (i.data as { absorbed?: string }).absorbed === p.key)) return null;
+      const shield = fresh.find((i) => !i.used_at);
+      if (shield && (await this.consumeItem(data, shield, { absorbed: p.key, reason: p.reason }))) {
+        events?.push({ type: "shielded", reason: p.reason });
+        await this.notify("item", "[PENALTY SHIELD]", `Your shield absorbed a penalty: ${p.reason}.`);
+        return "shielded";
+      }
+    }
+    const applied = await applyPenalty(this.svc, this.userId, { ...p, day: data.today });
+    if (applied && p.gold && (await rewardsEnabled(this.db))) {
+      const take = Math.min(p.gold, await this.goldBalance());
+      if (take > 0) await this.gold(data, { amount: -take, kind: "penalty", sourceType: p.sourceType, sourceId: p.sourceId, reason: p.reason, key: `gold:${p.key}` });
+    }
+    return applied ? "applied" : null;
   }
 
   /**
@@ -269,7 +358,8 @@ export class GameService {
         await this.svc.update("quests", { id: q.id, user_id: this.userId }, { status: "failed" });
         const amount = q.config.penaltyXp ?? questPenalty(q.xp_reward, p.difficulty);
         const zone = q.kind === "penalty";
-        if (await this.penalize(data, { amount, attribute: q.attribute_code, sourceType: zone ? "penalty_zone" : "quest_failed", sourceId: q.id, reason: zone ? "Penalty Zone failed" : `Quest failed: ${q.title}`, key: `penalty:${q.id}` })) {
+        const goldLoss = zone ? (q.config.penaltyGold ?? 0) : Math.round(questGold(q) * PENALTY_MULTIPLIER[p.difficulty]);
+        if ((await this.penalize(data, { amount, attribute: q.attribute_code, sourceType: zone ? "penalty_zone" : "quest_failed", sourceId: q.id, reason: zone ? "Penalty Zone failed" : `Quest failed: ${q.title}`, key: `penalty:${q.id}`, gold: goldLoss }, events)) === "applied") {
           lost += amount;
           failedTitles.push(q.title);
         }
@@ -307,7 +397,7 @@ export class GameService {
       regimen = { ...next, progressedWeek: ws };
       await this.svc.update("settings", { user_id: this.userId }, { regimen });
       if (change !== "hold") {
-        const parts = [regimen.pushups && `${regimen.pushups} push-ups`, regimen.situps && `${regimen.situps} sit-ups`, regimen.squats && `${regimen.squats} squats`, regimen.pullups && `${regimen.pullups} pull-ups`, regimen.runKm && `a ${formatRunDistance(regimen.runKm, units)} run`].filter(Boolean).join(", ");
+        const parts = [regimen.pushups && `${regimen.pushups} push-ups`, regimen.situps && `${regimen.situps} sit-ups`, regimen.squats && `${regimen.squats} squats`, regimen.dips && `${regimen.dips} dips`, regimen.pullups && `${regimen.pullups} pull-ups`, regimen.runKm && `a ${formatRunDistance(regimen.runKm, units)} run`].filter(Boolean).join(", ");
         const body = change === "up" ? `You cleared ${cleared} of ${last.length} training days. This week's regimen: ${parts}.` : `You cleared only ${cleared} of ${last.length} training days. The regimen steps back to ${parts}.`;
         events.push({ type: "info", title: change === "up" ? "Training level up" : "Training scaled back", body });
         await this.notify("quest", change === "up" ? "[TRAINING LEVEL UP]" : "[TRAINING ADJUSTED]", body);
@@ -326,7 +416,9 @@ export class GameService {
     // Penalty Zone
     if (penal && failedYesterday.length) {
       const failPenalty = PENALTY_ZONE_FAIL_FACTOR * failedYesterday.reduce((a, f) => a + (f.quest.config.penaltyXp ?? questPenalty(f.quest.xp_reward, p.difficulty)), 0);
-      const zone = penaltyZoneDraft(data.today, failedYesterday, todays, failPenalty);
+      const failGold = PENALTY_ZONE_FAIL_FACTOR * failedYesterday.reduce((a, f) => a + Math.round(questGold(f.quest) * PENALTY_MULTIPLIER[p.difficulty]), 0);
+      const draft = penaltyZoneDraft(data.today, failedYesterday, todays, failPenalty);
+      const zone = draft ? { ...draft, config: { ...draft.config, penaltyGold: failGold } } : null;
       if (zone && (await this.insertQuestDrafts(missing([zone]), baseline()))) {
         created += 1;
         const body = `Complete yesterday's unfinished work by midnight, on top of today's quests. Failure costs ${failPenalty} XP.`;
@@ -358,6 +450,7 @@ export class GameService {
               await this.award({ amount: a.xp, kind: "quest", attribute: a.quest.attribute_code, sourceType: "quest", sourceId: a.quest.id, reason: `Quest complete: ${a.quest.title}`, key: this.rekey(data, `quest:${a.quest.id}`, a.quest.id), day: data.today });
               events.push({ type: "quest_complete", title: a.quest.title, kind: a.quest.kind, xp: a.xp });
               await this.notify("quest", "[QUEST COMPLETE]", `${a.quest.title} (+${a.xp} XP)`);
+              await this.questGoldAward(data, events, questGold(a.quest), a.quest.id, `Quest complete: ${a.quest.title}`, `gold:quest:${a.quest.id}`);
             }
             break;
           }
@@ -366,6 +459,7 @@ export class GameService {
             if (ins.length) {
               await this.award({ amount: a.xp, kind: "milestone", attribute: a.quest.attribute_code, sourceType: "main_chapter", sourceId: a.quest.id, reason: `${a.quest.title}: ${a.chapterName}`, key: `chapter:${a.quest.id}:${a.chapter}`, day: data.today });
               events.push({ type: "chapter_complete", questTitle: a.quest.title, chapter: a.chapterName, xp: a.xp, final: a.final });
+              await this.questGoldAward(data, events, MAIN_CHAPTER_GOLD, `${a.quest.id}:${a.chapter}`, `${a.quest.title}: ${a.chapterName}`, `gold:chapter:${a.quest.id}:${a.chapter}`);
               await this.notify("story", "[MAIN QUEST UPDATED]", `${a.quest.title}: ${a.chapterName} complete.${a.final ? " The arc is complete." : " The next chapter is unlocked."}`);
               if (a.final) {
                 await this.svc.insertIgnore("quest_completions", { user_id: this.userId, quest_id: a.quest.id, chapter: 0, xp_awarded: 0 }, ["user_id", "quest_id", "chapter"]);
@@ -378,6 +472,14 @@ export class GameService {
             if (await this.award({ amount: a.xp, kind: "quest", attribute: "DIS", sourceType: "daily_all", sourceId: `daily_all:${a.date}`, reason: "All daily quests complete", key: this.rekey(data, `daily_all:${a.date}`, `daily_all:${a.date}`), day: data.today })) {
               events.push({ type: "quest_complete", title: "All daily quests complete", kind: "daily_bonus", xp: a.xp });
               await this.notify("quest", "[DAILY QUESTS CLEARED]", `Every daily quest is complete. Bonus +${a.xp} XP.`);
+              if (await rewardsEnabled(this.db)) {
+                await this.questGoldAward(data, events, DAILY_ALL_GOLD, `daily_all:${a.date}`, "All daily quests complete", `gold:daily_all:${a.date}`);
+                const rarity = rollChestRarity(`${this.userId}:${a.date}`);
+                if (await this.grantItem("chest", { source: "system", sourceId: `daily_all:${a.date}`, key: `chest:${a.date}`, rarity, data: { date: a.date } })) {
+                  events.push({ type: "chest", rarity });
+                  await this.notify("item", "[REWARD CHEST]", `A ${CHEST_INFO[rarity].name} has appeared. Open it on the Rewards page.`);
+                }
+              }
             }
             break;
           case "skill_unlock": {
@@ -474,7 +576,7 @@ export class GameService {
     const events: GameEvent[] = [];
     const { data: d2, ev } = await this.progress(events);
     data = d2;
-    return buildSnapshot(data, ev, this.db.kind, await penaltiesEnabled(this.db));
+    return buildSnapshot(data, ev, this.db.kind, await penaltiesEnabled(this.db), await rewardsEnabled(this.db));
   }
 
   async execute(raw: unknown): Promise<{ events: GameEvent[]; snapshot: PlayerSnapshot }> {
@@ -559,7 +661,7 @@ export class GameService {
         await this.svc.update("quests", { id: q.id, user_id: this.userId }, { status: "abandoned" });
         if (q.config?.penalized && (await penaltiesEnabled(this.db))) {
           const amount = q.config.penaltyXp ?? questPenalty(q.xp_reward, data.profile.difficulty);
-          if (await this.penalize(data, { amount, attribute: q.attribute_code, sourceType: "quest_abandoned", sourceId: q.id, reason: `Quest abandoned: ${q.title}`, key: `penalty:${q.id}` })) {
+          if ((await this.penalize(data, { amount, attribute: q.attribute_code, sourceType: "quest_abandoned", sourceId: q.id, reason: `Quest abandoned: ${q.title}`, key: `penalty:${q.id}` }, events)) === "applied") {
             events.push({ type: "penalty", title: "Quest abandoned", body: `${q.title}: −${amount} XP.`, xp: amount, zone: false });
             await this.notify("penalty", "[PENALTY]", `Quest abandoned: ${q.title}. −${amount} XP.`);
           }
@@ -570,18 +672,32 @@ export class GameService {
         if (!(await penaltiesEnabled(this.db))) throw new GameError("Recovery passes need database migration 0003.", 409);
         const regimen = resolveRegimen(data.settings.regimen);
         const ws = weekStart(data.today);
-        const usedDays = new Set(data.quests.filter((q) => q.config?.recoveryPass && q.period_start >= ws && q.period_start <= data.today).map((q) => q.period_start));
-        if (usedDays.has(data.today)) throw new GameError("Today's recovery pass is already in use.");
-        if (usedDays.size >= regimen.recoveryPassesPerWeek) throw new GameError(regimen.recoveryPassesPerWeek ? `You have used this week's recovery pass${regimen.recoveryPassesPerWeek > 1 ? "es" : ""}. They reset on Monday.` : "Recovery passes are turned off in your regimen.");
+        if (data.quests.some((q) => q.config?.recoveryPass && q.period_start === data.today)) throw new GameError("Today's recovery pass is already in use.");
+        const freeUsed = new Set(data.quests.filter((q) => q.config?.recoveryPass && !q.config.recoveryPassItem && q.period_start >= ws && q.period_start <= data.today).map((q) => q.period_start)).size;
         const physical = data.quests.filter((q) => q.kind === "daily" && q.period_start === data.today && q.status === "active" && q.config?.category === "physical");
         if (!physical.length) throw new GameError("There are no open physical quests today.");
-        for (const q of physical) await this.svc.update("quests", { id: q.id, user_id: this.userId }, { status: "exempt", config: { ...q.config, recoveryPass: true } });
+        let fromItem = false;
+        if (freeUsed >= regimen.recoveryPassesPerWeek) {
+          const item = data.inventory.find((i) => i.item_code === "recovery_pass" && !i.used_at);
+          if (!item || !(await this.consumeItem(data, item))) throw new GameError(regimen.recoveryPassesPerWeek ? `You have used this week's free recovery pass${regimen.recoveryPassesPerWeek > 1 ? "es" : ""} and have no Recovery Pass items. Free passes reset on Monday.` : "Free recovery passes are off in your regimen, and you have no Recovery Pass items.");
+          fromItem = true;
+        }
+        for (const q of physical) await this.svc.update("quests", { id: q.id, user_id: this.userId }, { status: "exempt", config: { ...q.config, recoveryPass: true, recoveryPassItem: fromItem } });
         await this.notify("quest", "[RECOVERY PASS]", "Today's physical quests are waived. Rest well and return stronger.");
         events.push({ type: "info", title: "Recovery pass used", body: "Today's physical quests are waived without penalty." });
         break;
       }
       case "create_custom_quest":
         await this.createCustomQuest(data, cmd);
+        break;
+      case "open_chest":
+      case "use_item":
+      case "buy_item":
+      case "buy_reward":
+      case "create_reward":
+      case "update_reward":
+      case "delete_reward":
+        await this.rewardsCommand(data, cmd, events);
         break;
       case "create_custom_metric": {
         if (data.customMetrics.length >= 50) throw new GameError("Custom stat limit reached (50).");
@@ -654,7 +770,7 @@ export class GameService {
     const { data: after, ev } = await this.progress(events);
     this.diffEvents(before, ev, events, focusMetric);
     await this.cacheLevel(ev);
-    return { events, snapshot: buildSnapshot(after, ev, this.db.kind, await penaltiesEnabled(this.db)) };
+    return { events, snapshot: buildSnapshot(after, ev, this.db.kind, await penaltiesEnabled(this.db), await rewardsEnabled(this.db)) };
   }
 
   // ───────────────────────────── Import / export ─────────────────────────────
@@ -822,6 +938,76 @@ export class GameService {
     return act;
   }
 
+  private async rewardsCommand(data: GameData, cmd: Extract<Command, { type: "open_chest" | "use_item" | "buy_item" | "buy_reward" | "create_reward" | "update_reward" | "delete_reward" }>, events: GameEvent[]) {
+    if (!(await rewardsEnabled(this.db))) throw new GameError("Rewards need database migration 0004 (supabase/migrations/0004_rewards.sql). Run it in the Supabase SQL Editor, then try again.", 409);
+    switch (cmd.type) {
+      case "open_chest": {
+        const chest = data.inventory.find((i) => i.id === cmd.itemId && i.item_code === "chest");
+        if (!chest || !chest.rarity) throw new GameError("Chest not found.", 404);
+        if (chest.used_at) throw new GameError("That chest is already open.");
+        const contents = chestContents(chest.rarity, chest.id);
+        if (!(await this.consumeItem(data, chest, { opened: contents }))) throw new GameError("That chest is already open.");
+        await this.gold(data, { amount: contents.gold, kind: "chest", sourceType: "chest", sourceId: chest.id, reason: `${CHEST_INFO[chest.rarity].name} opened`, key: `chest:${chest.id}` });
+        for (const [i, code] of contents.items.entries()) await this.grantItem(code, { source: "chest", sourceId: chest.id, key: `chest:${chest.id}:${i}` });
+        if (contents.title) {
+          const ins = await this.svc.insertIgnore("title_unlocks", { user_id: this.userId, title_code: contents.title, source: `chest:${chest.id}` }, ["user_id", "title_code"]);
+          if (ins.length) events.push({ type: "title_unlocked", code: contents.title, name: TITLE_BY_CODE[contents.title]?.name ?? contents.title });
+        }
+        events.push({ type: "chest_opened", rarity: chest.rarity, gold: contents.gold, items: contents.items.map((c) => ITEM_INFO[c].name), title: contents.title ? (TITLE_BY_CODE[contents.title]?.name ?? null) : null });
+        break;
+      }
+      case "use_item": {
+        const item = data.inventory.find((i) => i.id === cmd.itemId);
+        if (!item || item.used_at) throw new GameError("Item not found or already used.", 404);
+        if (item.item_code === "penalty_shield") throw new GameError("Penalty Shields work automatically: the next penalty is absorbed.");
+        if (item.item_code === "recovery_pass") throw new GameError("Use Recovery Pass items from the Physical section of the quest board.");
+        if (item.item_code !== "xp_elixir") throw new GameError("That item can't be used directly.");
+        if (this.elixirDay === data.today) throw new GameError("An elixir is already active today.");
+        if (!(await this.consumeItem(data, item))) throw new GameError("Item already used.");
+        events.push({ type: "info", title: "Double-XP Elixir active", body: "All XP you earn for the rest of today is doubled." });
+        await this.notify("item", "[ELIXIR]", "Double XP is active for the rest of today.");
+        break;
+      }
+      case "buy_item": {
+        const offer = SYSTEM_SHOP.find((o) => o.code === cmd.code);
+        if (!offer) throw new GameError("Unknown item.", 404);
+        await this.spend(data, offer.price, "system_shop", offer.code, `Bought: ${ITEM_INFO[offer.code].name}`, cmd.idempotencyKey);
+        await this.grantItem(offer.code as ItemCode, { source: "shop", sourceId: offer.code, key: `shop:${cmd.idempotencyKey}` });
+        events.push({ type: "purchase", name: ITEM_INFO[offer.code].name, price: offer.price });
+        break;
+      }
+      case "buy_reward": {
+        const r = data.shopRewards.find((x) => x.id === cmd.rewardId && !x.archived);
+        if (!r) throw new GameError("Reward not found.", 404);
+        await this.spend(data, r.price, "shop_reward", r.id, `Bought: ${r.name}`, cmd.idempotencyKey);
+        events.push({ type: "purchase", name: r.name, price: r.price });
+        await this.notify("purchase", "[REWARD CLAIMED]", `${r.name} (−${r.price} gold). Enjoy it, you earned it.`);
+        break;
+      }
+      case "create_reward":
+        if (data.shopRewards.filter((x) => !x.archived).length >= 50) throw new GameError("Reward limit reached (50).");
+        await this.u.insert("shop_rewards", { user_id: this.userId, name: cmd.name, description: cmd.description, price: cmd.price });
+        break;
+      case "update_reward": {
+        const r = data.shopRewards.find((x) => x.id === cmd.rewardId && !x.archived);
+        if (!r) throw new GameError("Reward not found.", 404);
+        await this.u.update("shop_rewards", { id: r.id, user_id: this.userId }, { name: cmd.name, description: cmd.description, price: cmd.price });
+        break;
+      }
+      case "delete_reward":
+        // Archived rather than deleted so past purchases keep their name.
+        await this.u.update("shop_rewards", { id: cmd.rewardId, user_id: this.userId }, { archived: true });
+        break;
+    }
+  }
+
+  private async spend(data: GameData, price: number, sourceType: string, sourceId: string, reason: string, key: string) {
+    if (data.gold.some((g) => g.idempotency_key === `buy:${key}`)) throw new GameError("This purchase was already made.", 409);
+    const balance = await this.goldBalance();
+    if (balance < price) throw new GameError(`Not enough gold: you have ${balance}, this costs ${price}.`);
+    if (!(await this.gold(data, { amount: -price, kind: "purchase", sourceType, sourceId, reason, key: `buy:${key}` }))) throw new GameError("This purchase was already made.", 409);
+  }
+
   private async createCustomQuest(data: GameData, cmd: Extract<Command, { type: "create_custom_quest" }>) {
     const activeCustom = data.quests.filter((q) => (q.kind === "custom" || q.kind === "emergency") && q.status === "active").length;
     if (activeCustom >= 20) throw new GameError("Too many active custom quests (20).");
@@ -957,7 +1143,7 @@ export class GameService {
     let penalty = 0;
     if (await penaltiesEnabled(this.db)) {
       const amount = flatPenalty(DUNGEON_RETREAT_PENALTY, data.profile.difficulty);
-      if (await this.penalize(data, { amount, attribute: "DIS", sourceType: "dungeon_retreat", sourceId: s.id, reason: `Retreated from ${def.name}`, key: `penalty:dungeon:${s.id}` })) penalty = amount;
+      if ((await this.penalize(data, { amount, attribute: "DIS", sourceType: "dungeon_retreat", sourceId: s.id, reason: `Retreated from ${def.name}`, key: `penalty:dungeon:${s.id}` }, events)) === "applied") penalty = amount;
     }
     events.push({ type: "dungeon_retreat", name: def.name, creditedMinutes: credited, penalty });
   }

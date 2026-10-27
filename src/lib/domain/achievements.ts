@@ -143,6 +143,21 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     [1, "Penalty Zone Survivor", "uncommon"],
     [5, "Back From the Brink", "rare"],
   ]),
+  ...family("Rewards", "Coins", "gold_earned_total", (t) => `Earn ${n(t)} gold in total.`, [
+    [500, "Pocket Money", "common"],
+    [5000, "Treasure Hunter", "rare"],
+    [25000, "Dragon's Hoard", "epic"],
+  ]),
+  ...family("Rewards", "Gem", "chests_opened", (t) => `Open ${t} reward chest${t === 1 ? "" : "s"}.`, [
+    [1, "First Loot", "common"],
+    [10, "Loot Goblin", "uncommon"],
+    [50, "Vault Breaker", "rare"],
+  ]),
+  ...family("Rewards", "Crown", "legendary_chests", () => "Open a legendary chest.", [[1, "Fortune's Favourite", "epic"]]),
+  ...family("Rewards", "Trophy", "rewards_purchased", (t) => (t === 1 ? "Claim a reward from your shop." : `Claim ${t} rewards from your shop.`), [
+    [1, "Earned It", "common"],
+    [25, "Work Hard, Play Hard", "rare"],
+  ]),
   ...family("Quests", "CalendarRange", "quests_weekly_completed", (t) => `Complete ${t} weekly quests.`, [
     [1, "Week Conquered", "common"],
     [10, "Weekly Warden", "uncommon"],

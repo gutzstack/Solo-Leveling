@@ -130,6 +130,10 @@ export function evaluate(data: GameData): Evaluation {
     reasoning_rating_value: currentValue("reasoning_rating") ?? 0,
     knowledge_rating_value: currentValue("knowledge_rating") ?? 0,
     working_memory_value: currentValue("working_memory_span") ?? 0,
+    gold_earned_total: data.gold.filter((g) => g.amount > 0 && g.kind !== "reversal").reduce((a, g) => a + g.amount, 0) - data.gold.filter((g) => g.kind === "reversal").reduce((a, g) => a - g.amount, 0),
+    chests_opened: data.inventory.filter((i) => i.item_code === "chest" && i.used_at).length,
+    legendary_chests: data.inventory.filter((i) => i.item_code === "chest" && i.rarity === "legendary" && i.used_at).length,
+    rewards_purchased: data.gold.filter((g) => g.kind === "purchase" && g.source_type === "shop_reward").length,
   };
 
   const skills: SkillView[] = SKILLS.map((s) => {

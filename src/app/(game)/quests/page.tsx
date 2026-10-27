@@ -11,6 +11,7 @@ import { useCommand, useSnapshot } from "@/lib/client/use-game";
 import { ACTIVITIES } from "@/lib/domain/activities";
 import { ATTRIBUTES } from "@/lib/domain/attributes";
 import { CATEGORY_INFO, QUEST_CATEGORIES, resolveRegimen, type QuestCategory } from "@/lib/domain/regimen";
+import { questGold } from "@/lib/domain/rewards";
 import { TITLE_BY_CODE } from "@/lib/domain/titles";
 import { displayUnit, parseDisplayInput } from "@/lib/domain/units";
 import type { AttributeCode, UnitKind } from "@/lib/domain/types";
@@ -162,7 +163,7 @@ function weekStartOf(date: string): string {
   return d.toISOString().slice(0, 10);
 }
 
-const SET_ACTIVITIES = new Set(["pushups", "situps", "squats", "pullups"]);
+const SET_ACTIVITIES = new Set(["pushups", "situps", "squats", "dips", "pullups"]);
 
 /** One-tap logging for rep-based objectives; runs take distance and time. */
 const KM_PER_MI = 1.609344;
@@ -253,7 +254,9 @@ function Countdown({ deadline }: { deadline: string }) {
 
 function QuestCard({ q }: { q: QuestView }) {
   const cmd = useCommand();
-  const units = useSnapshot().data?.settings.unit_system;
+  const snap = useSnapshot().data;
+  const units = snap?.settings.unit_system;
+  const gold = snap?.rewards.enabled ? Math.round(questGold(q) * snap.rewards.multiplier) : 0;
   const done = q.status === "completed";
   const inactive = q.status === "expired" || q.status === "abandoned" || q.status === "exempt";
   const failed = q.status === "failed";
@@ -268,7 +271,10 @@ function QuestCard({ q }: { q: QuestView }) {
           <p className={cn("font-display text-[9px] tracking-[0.2em]", zone ? "text-red-400" : "text-accent-2")}>{zone ? "[PENALTY QUEST]" : q.kind === "emergency" ? "[EMERGENCY QUEST]" : `[${q.kind.toUpperCase()} QUEST]`}</p>
           <h3 className="font-semibold leading-snug text-fg">{q.title}</h3>
         </div>
-        {q.xp_reward ? <span className="font-mono text-xs text-accent">+{q.xp_reward} XP</span> : null}
+        <div className="flex flex-col items-end">
+          {q.xp_reward ? <span className="font-mono text-xs text-accent">+{q.xp_reward} XP</span> : null}
+          {gold ? <span className="font-mono text-[11px] text-amber-300 light:text-amber-800">+{gold} gold</span> : null}
+        </div>
       </div>
       {q.description ? <p className="text-sm text-dim">{q.description}</p> : null}
       <div className="flex flex-wrap gap-1.5">

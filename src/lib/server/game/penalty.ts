@@ -3,21 +3,36 @@ import type { AttributeCode } from "../../domain/types";
 import type { ISODate } from "../../domain/dates";
 import type { Database, DataClient } from "../db/types";
 
-let enabledCache: boolean | null = null;
+interface Applied {
+  penalties: boolean;
+  rewards: boolean;
+}
+let cache: Applied = { penalties: false, rewards: false };
 
 /**
- * Penalties need migration 0003 (penalty XP rows, failed quests). Until it is applied the game keeps
- * working without them, so a deploy that lands before the migration doesn't break the site.
+ * Which optional migrations are applied (markers in system_meta). Features that need them stay off
+ * until they run, so a deploy that lands first doesn't break the site. Only "applied" is cached.
  */
-export async function penaltiesEnabled(db: Database): Promise<boolean> {
-  if (enabledCache) return true;
+async function applied(db: Database): Promise<Applied> {
+  if (cache.penalties && cache.rewards) return cache;
   try {
-    const rows = await db.service().select<{ value: string }>("system_meta", { eq: { key: "schema_version" } });
-    enabledCache = Number(rows[0]?.value ?? 0) >= 3;
+    const rows = await db.service().select<{ key: string; value: string }>("system_meta", { in: { key: ["schema_version", "migration_0004"] } });
+    const get = (k: string) => rows.find((r) => r.key === k)?.value;
+    cache = { penalties: cache.penalties || Number(get("schema_version") ?? 0) >= 3, rewards: cache.rewards || get("migration_0004") === "applied" };
   } catch {
-    enabledCache = false;
+    // keep what we knew
   }
-  return enabledCache;
+  return cache;
+}
+
+/** Penalties need migration 0003 (penalty XP rows, failed quests). */
+export async function penaltiesEnabled(db: Database): Promise<boolean> {
+  return (await applied(db)).penalties;
+}
+
+/** Gold, chests, items and the reward shop need migration 0004. */
+export async function rewardsEnabled(db: Database): Promise<boolean> {
+  return (await applied(db)).rewards;
 }
 
 /** Idempotent XP deduction. Returns true only if this call recorded it. */

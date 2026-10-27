@@ -33,6 +33,7 @@ export const TITLES: TitleDef[] = [
   { code: "financially_awakened", name: "Financially Awakened", description: "Completed Financial Awakening.", rarity: "legendary" },
   { code: "master_of_habits", name: "Master of Habits", description: "60 perfect days.", rarity: "legendary" },
   { code: "skill_sovereign", name: "Skill Sovereign", description: "Mastered a skill line to tier V.", rarity: "epic" },
+  { code: "chosen_by_the_system", name: "Chosen by the System", description: "Opened a legendary reward chest.", rarity: "legendary" },
   { code: "the_examiner_falls", name: "Examiner's Bane", description: "Cleared 15 boss dungeons.", rarity: "epic" },
 ];
 

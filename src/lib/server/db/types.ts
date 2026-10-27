@@ -27,6 +27,9 @@ export const TABLES = [
   "notifications",
   "question_items",
   "trial_sessions",
+  "gold_ledger",
+  "inventory_items",
+  "shop_rewards",
 ] as const;
 export type Table = (typeof TABLES)[number];
 
@@ -115,4 +118,7 @@ export const PRIMARY_KEY: Record<Table, string> = {
   notifications: "id",
   question_items: "id",
   trial_sessions: "id",
+  gold_ledger: "id",
+  inventory_items: "id",
+  shop_rewards: "id",
 };

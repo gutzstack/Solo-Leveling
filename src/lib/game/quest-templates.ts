@@ -86,6 +86,7 @@ export function generateDailyQuests(p: ProfileRow, date: ISODate, cfg: XpConfig,
     if (r.pushups > 0) objs.push({ title: `${r.pushups} push-ups`, tracker: { type: "activity_quantity", activities: ["pushups"] }, target: r.pushups });
     if (r.situps > 0) objs.push({ title: `${r.situps} sit-ups`, tracker: { type: "activity_quantity", activities: ["situps"] }, target: r.situps });
     if (r.squats > 0) objs.push({ title: `${r.squats} squats`, tracker: { type: "activity_quantity", activities: ["squats"] }, target: r.squats });
+    if (r.dips > 0) objs.push({ title: `${r.dips} dips`, tracker: { type: "activity_quantity", activities: ["dips"] }, target: r.dips });
     if (r.pullups > 0) objs.push({ title: `${r.pullups} pull-ups`, tracker: { type: "activity_quantity", activities: ["pullups"] }, target: r.pullups });
     if (r.runKm > 0) objs.push({ title: `Run ${formatRunDistance(r.runKm, units)}`, tracker: { type: "activity_quantity", activities: ["run"] }, target: Math.round(r.runKm * 100) / 100 });
     if (objs.length)

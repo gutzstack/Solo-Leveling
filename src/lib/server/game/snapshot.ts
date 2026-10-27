@@ -3,7 +3,9 @@ import type { LevelProgress } from "../../domain/xp";
 import type { Evaluation, AchievementView, QuestView, SkillView } from "../../game/evaluate";
 import type { AttributeSummary, HunterSummary } from "../../game/hunter";
 import type { MetricState } from "../../game/metric-state";
-import type { ActivityRow, DungeonSessionRow, GameData, NotificationRow, ProfileRow, SettingsRow, TrialResultRow } from "../../game/rows";
+import type { ActivityRow, DungeonSessionRow, GameData, GoldRow, InventoryRow, NotificationRow, ProfileRow, SettingsRow, ShopRewardRow, TrialResultRow } from "../../game/rows";
+import { perfectStreak } from "../../game/quest-progress";
+import { streakMultiplier } from "../../domain/rewards";
 import { BENCHMARK_SOURCES } from "../../percentile/registry";
 import type { BenchmarkSource } from "../../percentile/registry-schema";
 import type { XpConfig } from "../../domain/xp";
@@ -40,9 +42,20 @@ export interface PlayerSnapshot {
   notifications: NotificationRow[];
   sources: BenchmarkSource[];
   trials: TrialResultRow[];
+  rewards: {
+    enabled: boolean;
+    balance: number;
+    perfectStreak: number;
+    multiplier: number;
+    elixirActive: boolean;
+    ledger: GoldRow[];
+    inventory: InventoryRow[];
+    shop: ShopRewardRow[];
+  };
 }
 
-export function buildSnapshot(data: GameData, ev: Evaluation, backend: "local" | "supabase", penaltiesEnabled = true): PlayerSnapshot {
+export function buildSnapshot(data: GameData, ev: Evaluation, backend: "local" | "supabase", penaltiesEnabled = true, rewardsEnabled = true): PlayerSnapshot {
+  const streak = perfectStreak(data, data.today);
   const reversed = new Set(data.xp.filter((x) => x.reverses_id).map((x) => x.reverses_id));
   const titles = data.titleUnlocks
     .map((t) => (TITLE_BY_CODE[t.title_code] ? { ...TITLE_BY_CODE[t.title_code], unlockedAt: t.unlocked_at, source: t.source } : null))
@@ -80,5 +93,15 @@ export function buildSnapshot(data: GameData, ev: Evaluation, backend: "local" |
     notifications: data.notifications,
     sources: BENCHMARK_SOURCES,
     trials: data.trials.slice(-100),
+    rewards: {
+      enabled: rewardsEnabled,
+      balance: Math.max(0, data.gold.reduce((a, g) => a + g.amount, 0)),
+      perfectStreak: streak,
+      multiplier: streakMultiplier(streak),
+      elixirActive: data.inventory.some((i) => i.item_code === "xp_elixir" && i.used_on === data.today),
+      ledger: data.gold.slice(-60).reverse(),
+      inventory: data.inventory,
+      shop: data.shopRewards.filter((r) => !r.archived),
+    },
   };
 }

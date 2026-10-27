@@ -1,6 +1,7 @@
 import type { ISODate } from "../domain/dates";
 import type { AttributeCode, EntryContext, Sex, UnitSystem } from "../domain/types";
 import type { QuestCategory } from "../domain/regimen";
+import type { ChestContents, ChestRarity, ItemCode } from "../domain/rewards";
 import type { XpTransactionRow } from "../domain/xp";
 
 /** Row shapes exactly as stored (snake_case columns, see supabase/migrations). */
@@ -141,6 +142,10 @@ export interface QuestRow {
     /** Penalty Zone: quests whose failure caused it */
     causes?: string[];
     recoveryPass?: boolean;
+    /** the waiver came from a Recovery Pass item rather than the weekly allowance */
+    recoveryPassItem?: boolean;
+    /** Penalty Zone: gold lost if it fails */
+    penaltyGold?: number;
   };
   created_at: string;
   completed_at: string | null;
@@ -271,4 +276,42 @@ export interface GameData {
   notifications: NotificationRow[];
   trials: TrialResultRow[];
   questionCount: number;
+  /** empty until migration 0004 is applied */
+  gold: GoldRow[];
+  inventory: InventoryRow[];
+  shopRewards: ShopRewardRow[];
+}
+
+export interface GoldRow {
+  id: string;
+  amount: number;
+  kind: "quest" | "bonus" | "chest" | "purchase" | "penalty" | "reversal";
+  source_type: string;
+  source_id: string | null;
+  reason: string;
+  idempotency_key: string;
+  awarded_on: ISODate;
+  created_at: string;
+}
+
+export interface InventoryRow {
+  id: string;
+  item_code: "chest" | ItemCode;
+  rarity: ChestRarity | null;
+  source: "chest" | "shop" | "system";
+  source_id: string | null;
+  data: { opened?: ChestContents; date?: ISODate };
+  idempotency_key: string;
+  acquired_at: string;
+  used_at: string | null;
+  used_on: ISODate | null;
+}
+
+export interface ShopRewardRow {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  archived: boolean;
+  created_at: string;
 }

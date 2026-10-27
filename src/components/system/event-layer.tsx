@@ -1,6 +1,6 @@
 "use client";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { AlertTriangle, Award, BookMarked, ChevronsUp, Crown, Info, Network, ScrollText, Skull, Sparkles, Swords, Zap } from "lucide-react";
+import { AlertTriangle, Award, BookMarked, ChevronsUp, Coins, Crown, Gem, Info, Network, ScrollText, Shield, Skull, Sparkles, Swords, Zap } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { ATTRIBUTE_BY_CODE } from "@/lib/domain/attributes";
 import type { AttributeCode } from "@/lib/domain/types";
@@ -17,6 +17,7 @@ function isOverlay(e: GameEvent): boolean {
   if (e.type === "dungeon_clear" && e.boss) return true;
   if (e.type === "achievement" && (e.rarity === "legendary" || e.rarity === "mythic")) return true;
   if (e.type === "penalty" && e.zone) return true;
+  if (e.type === "chest_opened" && (e.rarity === "epic" || e.rarity === "legendary")) return true;
   return false;
 }
 
@@ -34,7 +35,13 @@ function sfxFor(e: GameEvent) {
       return "clear" as const;
     case "xp":
     case "quest_complete":
+    case "gold":
+    case "purchase":
       return "xp" as const;
+    case "chest":
+    case "chest_opened":
+    case "shielded":
+      return "achievement" as const;
     case "duplicate_warning":
     case "penalty":
       return "error" as const;
@@ -99,6 +106,16 @@ function toastContent(e: GameEvent): { tag: string; title: string; body?: string
         icon: Info,
         tone: e.penalty ? "text-red-300" : "text-sky-300",
       };
+    case "gold":
+      return { tag: "[GOLD]", title: `+${e.amount} gold`, body: e.reason, icon: Coins, tone: "text-amber-300" };
+    case "chest":
+      return { tag: "[REWARD CHEST]", title: `${e.rarity[0].toUpperCase()}${e.rarity.slice(1)} chest`, body: "Every daily quest cleared. Open it on the Rewards page.", icon: Gem, tone: "text-violet-300" };
+    case "chest_opened":
+      return { tag: "[CHEST OPENED]", title: `+${e.gold} gold`, body: [...e.items, e.title ? `Title: ${e.title}` : ""].filter(Boolean).join(" · ") || undefined, icon: Gem, tone: "text-amber-300" };
+    case "purchase":
+      return { tag: "[PURCHASE]", title: e.name, body: `−${e.price} gold`, icon: Coins, tone: "text-amber-300" };
+    case "shielded":
+      return { tag: "[PENALTY SHIELD]", title: "Penalty absorbed", body: e.reason, icon: Shield, tone: "text-sky-300" };
     case "penalty":
       return { tag: "[PENALTY]", title: e.xp ? `${e.title}: −${e.xp} XP` : e.title, body: e.body, icon: Skull, tone: "text-red-300" };
     case "duplicate_warning":
@@ -185,6 +202,11 @@ function Overlay({ item }: { item: QueuedEvent }) {
       tag = "[BOSS DEFEATED]";
       big = <Skull className="size-24 text-red-300" />;
       line = `${e.boss ?? e.name} has fallen.${e.xp ? ` +${e.xp} XP` : ""}`;
+      break;
+    case "chest_opened":
+      tag = `[${e.rarity.toUpperCase()} CHEST]`;
+      big = <Gem className={e.rarity === "legendary" ? "size-24 text-amber-300" : "size-24 text-violet-300"} />;
+      line = [`+${e.gold} gold`, ...e.items, e.title ? `Title: ${e.title}` : ""].filter(Boolean).join(" · ");
       break;
     case "penalty":
       tag = "[PENALTY ZONE]";

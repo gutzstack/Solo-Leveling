@@ -89,6 +89,13 @@ export const CommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("dismiss_quest"), questId: uuid }),
   z.object({ type: z.literal("abandon_quest"), questId: uuid }),
   z.object({ type: z.literal("use_recovery_pass") }),
+  z.object({ type: z.literal("open_chest"), itemId: uuid }),
+  z.object({ type: z.literal("use_item"), itemId: uuid }),
+  z.object({ type: z.literal("buy_item"), code: z.enum(["xp_elixir", "penalty_shield", "recovery_pass"]), idempotencyKey: idemKey }),
+  z.object({ type: z.literal("buy_reward"), rewardId: uuid, idempotencyKey: idemKey }),
+  z.object({ type: z.literal("create_reward"), name: z.string().trim().min(1).max(80), description: z.string().trim().max(300), price: z.number().int().min(1).max(1_000_000) }),
+  z.object({ type: z.literal("update_reward"), rewardId: uuid, name: z.string().trim().min(1).max(80), description: z.string().trim().max(300), price: z.number().int().min(1).max(1_000_000) }),
+  z.object({ type: z.literal("delete_reward"), rewardId: uuid }),
   z.object({
     type: z.literal("create_custom_quest"),
     title: z.string().trim().min(3).max(120),
@@ -146,6 +153,11 @@ export type GameEvent =
   | { type: "dungeon_retreat"; name: string; creditedMinutes: number; penalty?: number }
   | { type: "daily_login"; streak: number; firstToday: boolean; newQuests: number; penalties?: { xp: number; failed: string[]; zone: boolean; zoneFailed: boolean } }
   | { type: "penalty"; title: string; body: string; xp: number; zone: boolean }
+  | { type: "shielded"; reason: string }
+  | { type: "gold"; amount: number; reason: string }
+  | { type: "chest"; rarity: "common" | "rare" | "epic" | "legendary" }
+  | { type: "chest_opened"; rarity: "common" | "rare" | "epic" | "legendary"; gold: number; items: string[]; title: string | null }
+  | { type: "purchase"; name: string; price: number }
   | { type: "duplicate_warning"; message: string }
   | { type: "info"; title: string; body: string };
 

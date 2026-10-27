@@ -97,6 +97,40 @@ export function perfectDays(data: GameData, from: ISODate, to: ISODate): number 
   return [...days.values()].filter(Boolean).length;
 }
 
+/**
+ * Consecutive perfect days ending today (if today is already perfect) or yesterday. Days with no
+ * daily quests (before the first board) end the streak; recovery-pass-only days are skipped over.
+ */
+export function perfectStreak(data: GameData, today: ISODate): number {
+  const days = new Map<ISODate, { any: boolean; ok: boolean }>();
+  for (const q of data.quests) {
+    if (q.kind !== "daily" || q.status === "offered") continue;
+    const d = days.get(q.period_start) ?? { any: false, ok: true };
+    if (q.status !== "exempt") {
+      d.any = true;
+      if (q.status !== "completed") d.ok = false;
+    }
+    days.set(q.period_start, d);
+  }
+  const step = (d: ISODate) => {
+    const t = new Date(`${d}T00:00:00Z`);
+    t.setUTCDate(t.getUTCDate() - 1);
+    return t.toISOString().slice(0, 10);
+  };
+  let d = days.get(today)?.any && days.get(today)?.ok ? today : step(today);
+  let n = 0;
+  for (let guard = 0; guard < 3660; guard++) {
+    const day = days.get(d);
+    if (!day) break;
+    if (day.any) {
+      if (!day.ok) break;
+      n += 1;
+    }
+    d = step(d);
+  }
+  return n;
+}
+
 /** Chapter number currently in play for a main quest (1-based), or null when every chapter is complete. */
 export function currentChapter(quest: QuestRow, completedChapters: Set<number>): number | null {
   const chapters = quest.config?.chapters ?? [];

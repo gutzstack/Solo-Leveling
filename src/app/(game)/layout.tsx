@@ -1,6 +1,6 @@
 "use client";
 import { AnimatePresence, motion } from "framer-motion";
-import { Bell, Brain, DoorOpen, Gauge, Hexagon, LineChart, Loader2, Medal, Network, ScrollText, Settings, Trophy } from "lucide-react";
+import { Bell, Brain, Coins, DoorOpen, Gauge, Gem, Hexagon, LineChart, Loader2, Medal, Network, ScrollText, Settings, Trophy } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -17,6 +17,7 @@ const NAV = [
   { href: "/status", label: "Status", icon: Gauge },
   { href: "/attributes", label: "Attributes", icon: Hexagon },
   { href: "/quests", label: "Quests", icon: ScrollText },
+  { href: "/rewards", label: "Rewards", icon: Gem },
   { href: "/dungeons", label: "Dungeons", icon: DoorOpen },
   { href: "/trials", label: "Trials", icon: Brain },
   { href: "/skills", label: "Skills", icon: Network },
@@ -127,6 +128,13 @@ export default function GameLayout({ children }: { children: React.ReactNode }) 
               </div>
               <XpBar value={data.player.level.xpIntoLevel} max={data.player.level.xpForNext} thin label="Experience toward next level" />
             </div>
+            {data.rewards.enabled ? (
+              <Link href="/rewards" className="flex items-center gap-1.5 rounded-lg border border-amber-400/40 px-2.5 py-1.5 font-mono text-xs text-amber-300 hover:bg-amber-400/10 light:text-amber-800" aria-label={`${data.rewards.balance} gold`}>
+                <Coins className="size-3.5" />
+                {data.rewards.balance.toLocaleString()}
+                {data.rewards.multiplier > 1 ? <span className="text-[10px] text-amber-200/80 light:text-amber-700">×{data.rewards.multiplier}</span> : null}
+              </Link>
+            ) : null}
             <RankBadge rank={data.hunter.rank} size="sm" label={`Hunter rank ${data.hunter.rank ?? "unranked"}`} />
             <NotificationsDialog>
               <button className="relative rounded-lg border border-line p-2 text-dim hover:text-fg" aria-label={`Notifications (${unread} unread)`}>

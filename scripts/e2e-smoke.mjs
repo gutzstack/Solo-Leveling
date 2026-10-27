@@ -98,6 +98,16 @@ try {
     await page.screenshot({ path: `${OUT}/05-quest-board.png`, fullPage: true });
   });
 
+  await step("rewards: stock the shop", async () => {
+    await page.goto(BASE + "/rewards");
+    await page.getByText("Your reward shop").waitFor({ timeout: 20000 });
+    await page.getByLabel("New reward").fill("1 hour of gaming");
+    await page.getByLabel("Price (gold)").fill("150");
+    await page.getByRole("button", { name: "Add reward" }).click();
+    await page.getByText("1 hour of gaming", { exact: true }).waitFor({ timeout: 15000 });
+    await page.screenshot({ path: `${OUT}/06-rewards.png`, fullPage: true });
+  });
+
   await step("reasoning trial: complete 12 items", async () => {
     await page.goto(BASE + "/trials");
     await page.getByRole("heading", { name: "Reasoning Trial" }).waitFor({ timeout: 20000 });
@@ -112,7 +122,7 @@ try {
     await page.getByRole("button", { name: "Return" }).click();
   });
 
-  const pages = ["attributes", "attributes/INT", "quests", "dungeons", "trials", "skills", "achievements", "analytics", "rankings", "system"];
+  const pages = ["attributes", "attributes/INT", "quests", "rewards", "dungeons", "trials", "skills", "achievements", "analytics", "rankings", "system"];
   for (const p of pages) {
     await step(`page /${p}`, async () => {
       await page.goto(`${BASE}/${p}`);

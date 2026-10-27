@@ -6,19 +6,20 @@ import type { Database, DataClient } from "../db/types";
 interface Applied {
   penalties: boolean;
   rewards: boolean;
+  friends: boolean;
 }
-let cache: Applied = { penalties: false, rewards: false };
+let cache: Applied = { penalties: false, rewards: false, friends: false };
 
 /**
  * Which optional migrations are applied (markers in system_meta). Features that need them stay off
  * until they run, so a deploy that lands first doesn't break the site. Only "applied" is cached.
  */
 async function applied(db: Database): Promise<Applied> {
-  if (cache.penalties && cache.rewards) return cache;
+  if (cache.penalties && cache.rewards && cache.friends) return cache;
   try {
-    const rows = await db.service().select<{ key: string; value: string }>("system_meta", { in: { key: ["schema_version", "migration_0004"] } });
+    const rows = await db.service().select<{ key: string; value: string }>("system_meta", { in: { key: ["schema_version", "migration_0004", "migration_0005"] } });
     const get = (k: string) => rows.find((r) => r.key === k)?.value;
-    cache = { penalties: cache.penalties || Number(get("schema_version") ?? 0) >= 3, rewards: cache.rewards || get("migration_0004") === "applied" };
+    cache = { penalties: cache.penalties || Number(get("schema_version") ?? 0) >= 3, rewards: cache.rewards || get("migration_0004") === "applied", friends: cache.friends || get("migration_0005") === "applied" };
   } catch {
     // keep what we knew
   }
@@ -33,6 +34,11 @@ export async function penaltiesEnabled(db: Database): Promise<boolean> {
 /** Gold, chests, items and the reward shop need migration 0004. */
 export async function rewardsEnabled(db: Database): Promise<boolean> {
   return (await applied(db)).rewards;
+}
+
+/** Usernames, friends and shared progress need migration 0005. */
+export async function friendsEnabled(db: Database): Promise<boolean> {
+  return (await applied(db)).friends;
 }
 
 /** Idempotent XP deduction. Returns true only if this call recorded it. */

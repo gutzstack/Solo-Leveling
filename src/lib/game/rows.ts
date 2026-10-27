@@ -25,6 +25,8 @@ export interface ProfileRow {
   tracked_categories: AttributeCode[];
   timezone: string;
   onboarded_at: string | null;
+  /** absent until migration 0005 is applied */
+  username?: string | null;
   created_at: string;
   updated_at: string;
 }

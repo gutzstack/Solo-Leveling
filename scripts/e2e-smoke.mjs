@@ -108,6 +108,13 @@ try {
     await page.screenshot({ path: `${OUT}/06-rewards.png`, fullPage: true });
   });
 
+  await step("friends: choose a username", async () => {
+    await page.goto(BASE + "/friends");
+    await page.getByLabel("Username", { exact: true }).fill(`e2e${Date.now().toString().slice(-8)}`);
+    await page.getByRole("button", { name: "Save" }).click();
+    await page.getByRole("button", { name: "Change" }).waitFor({ timeout: 15000 });
+  });
+
   await step("reasoning trial: complete 12 items", async () => {
     await page.goto(BASE + "/trials");
     await page.getByRole("heading", { name: "Reasoning Trial" }).waitFor({ timeout: 20000 });
@@ -122,7 +129,7 @@ try {
     await page.getByRole("button", { name: "Return" }).click();
   });
 
-  const pages = ["attributes", "attributes/INT", "quests", "rewards", "dungeons", "trials", "skills", "achievements", "analytics", "rankings", "system"];
+  const pages = ["attributes", "attributes/INT", "quests", "rewards", "dungeons", "trials", "skills", "achievements", "analytics", "rankings", "friends", "system"];
   for (const p of pages) {
     await step(`page /${p}`, async () => {
       await page.goto(`${BASE}/${p}`);

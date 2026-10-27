@@ -3,6 +3,7 @@ import { ACTIVITY_BY_TYPE, qualifiesForXp } from "../../domain/activities";
 import { ATTRIBUTE_BY_CODE } from "../../domain/attributes";
 import { addDays, daysBetween, localDate, weekStart, type ISODate } from "../../domain/dates";
 import { activeSecondsNow, canClear, creditedMinutes, DUNGEON_BY_CODE, DUNGEON_CLEAR_XP, DUNGEON_DAILY_BONUS_CAP, RETREAT_CREDIT_MINUTES } from "../../domain/dungeons";
+import type { FriendStats } from "../../domain/friends";
 import { METRIC_BY_ID, type MetricDef } from "../../domain/metrics";
 import { chestContents, CHEST_INFO, DAILY_ALL_GOLD, DUNGEON_CLEAR_GOLD, ITEM_INFO, MAIN_CHAPTER_GOLD, questGold, rollChestRarity, streakMultiplier, SYSTEM_SHOP, type ItemCode } from "../../domain/rewards";
 import { DUNGEON_RETREAT_PENALTY, flatPenalty, MAX_BACKFILL_DAYS, PENALTY_MULTIPLIER, PENALTY_ZONE_FAIL_FACTOR, progressRegimen, questPenalty, resolveRegimen } from "../../domain/regimen";
@@ -18,13 +19,36 @@ import { formatRunDistance, generateDailyQuests, generateEmergencyQuests, genera
 import { computeStats } from "../../game/stats";
 import type { ActivityRow, CustomMetricRow, DungeonSessionRow, GameData, GoldRow, InventoryRow, MetricEntryRow, ObjectiveRow, ProfileRow, QuestRow, SettingsRow, ShopRewardRow, TrialResultRow } from "../../game/rows";
 import { UniqueViolationError, type Database, type DataClient } from "../db/types";
-import { applyPenalty, penaltiesEnabled, rewardsEnabled } from "./penalty";
+import { applyPenalty, friendsEnabled, penaltiesEnabled, rewardsEnabled } from "./penalty";
 import { buildSnapshot, type PlayerSnapshot } from "./snapshot";
 
 /** Regimen quests created before this were generated with the original 100/100/100/5 km defaults. */
 const LIGHTER_REGIMEN_SHIPPED = "2026-10-27T06:00:00.000Z";
 /** Daily quests that are no longer issued; any still open are waived rather than failed. */
 const RETIRED_DAILIES = ["daily_nutrition"];
+
+/** The progress summary friends can see. Game state only: no measurements, finances, notes or logs. */
+export function friendStats(data: GameData, ev: Evaluation): FriendStats {
+  const ws = weekStart(data.today);
+  const r = resolveRegimen(data.settings.regimen);
+  return {
+    level: ev.level.level,
+    totalXp: ev.level.totalXp,
+    weekXp: data.xp.filter((x) => x.awarded_on >= ws).reduce((a, x) => a + x.amount, 0),
+    hunterRank: ev.hunter.rank,
+    attributes: ev.attributes.filter((a) => a.tracked).map((a) => ({ code: a.code, level: a.level.level, rank: a.rank })),
+    perfectStreak: perfectStreak(data, data.today),
+    perfectDays: ev.stats.counts.perfect_days ?? 0,
+    activeStreak: ev.stats.currentStreak,
+    questsCompleted: ev.stats.counts.quests_completed ?? 0,
+    regimenDays: ev.stats.counts.regimen_days ?? 0,
+    dungeonsCleared: ev.stats.counts.dungeons_cleared ?? 0,
+    achievements: data.achievementUnlocks.length,
+    title: data.equippedTitle ? (TITLE_BY_CODE[data.equippedTitle.title_code]?.name ?? null) : null,
+    regimen: r.categories.physical ? { pushups: r.pushups, situps: r.situps, squats: r.squats, dips: r.dips, pullups: r.pullups, runKm: r.runKm } : null,
+    updatedAt: data.now.toISOString(),
+  };
+}
 
 export class GameError extends Error {
   constructor(
@@ -529,7 +553,7 @@ export class GameService {
     return { data, ev };
   }
 
-  private async cacheLevel(ev: Evaluation) {
+  private async cacheLevel(ev: Evaluation, data: GameData) {
     await this.svc.upsert(
       "player_levels",
       {
@@ -540,6 +564,7 @@ export class GameService {
         hunter_score: ev.hunter.score,
         attribute_levels: Object.fromEntries(ev.attributes.map((a) => [a.code, a.level.level])),
         updated_at: new Date().toISOString(),
+        ...((await friendsEnabled(this.db)) ? { stats: friendStats(data, ev) } : {}),
       },
       ["user_id"],
     );
@@ -780,7 +805,7 @@ export class GameService {
 
     const { data: after, ev } = await this.progress(events);
     this.diffEvents(before, ev, events, focusMetric);
-    await this.cacheLevel(ev);
+    await this.cacheLevel(ev, after);
     return { events, snapshot: buildSnapshot(after, ev, this.db.kind, await penaltiesEnabled(this.db), await rewardsEnabled(this.db)) };
   }
 

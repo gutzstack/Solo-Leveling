@@ -1,6 +1,6 @@
 "use client";
 import { AnimatePresence, motion } from "framer-motion";
-import { Bell, Brain, Coins, DoorOpen, Gauge, Gem, Hexagon, LineChart, Loader2, Medal, Network, ScrollText, Settings, Trophy } from "lucide-react";
+import { Bell, Brain, Coins, DoorOpen, Gauge, Gem, Hexagon, LineChart, Loader2, Medal, Network, ScrollText, Settings, Trophy, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -24,6 +24,7 @@ const NAV = [
   { href: "/achievements", label: "Achievements", icon: Trophy },
   { href: "/analytics", label: "Analytics", icon: LineChart },
   { href: "/rankings", label: "Rankings", icon: Medal },
+  { href: "/friends", label: "Friends", icon: Users },
   { href: "/system", label: "System", icon: Settings },
 ];
 

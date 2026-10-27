@@ -30,6 +30,7 @@ export const TABLES = [
   "gold_ledger",
   "inventory_items",
   "shop_rewards",
+  "friendships",
 ] as const;
 export type Table = (typeof TABLES)[number];
 
@@ -121,4 +122,5 @@ export const PRIMARY_KEY: Record<Table, string> = {
   gold_ledger: "id",
   inventory_items: "id",
   shop_rewards: "id",
+  friendships: "id",
 };

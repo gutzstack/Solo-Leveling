@@ -110,7 +110,6 @@ export function generateDailyQuests(p: ProfileRow, date: ISODate, cfg: XpConfig,
 
   if (categoryEnabled(p, r, "health")) {
     out.push(daily(date, cfg, "health", "daily_sleep", "Get adequate sleep (7–9 h)", "Log last night's sleep. 7–9 hours is the goal: not less, and no bonus for more.", "PHY", [{ title: "Log sleep within 7–9 h", tracker: { type: "sleep_in_range", min: 7, max: 9 }, target: 1 }], { habit: true }));
-    out.push(daily(date, cfg, "health", "daily_nutrition", "Log your nutrition", "A quick log of today's meals and protein.", "PHY", [{ title: "Nutrition log", tracker: { type: "activity_count", activities: ["nutrition_log"] }, target: 1 }], { habit: true }));
   }
 
   if (categoryEnabled(p, r, "social")) {

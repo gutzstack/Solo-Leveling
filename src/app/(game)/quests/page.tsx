@@ -23,7 +23,7 @@ export default function QuestsPage() {
   const [showHistory, setShowHistory] = useState(false);
   if (!data) return null;
   const zone = data.quests.find((q) => q.kind === "penalty" && q.status === "active") ?? null;
-  const visible = (q: QuestView) => showHistory || q.status === "active" || q.status === "offered" || ((q.status === "completed" || q.status === "exempt") && (q.period_end === null || q.period_end >= data.today));
+  const visible = (q: QuestView) => showHistory || q.status === "active" || q.status === "offered" || ((q.status === "completed" || (q.status === "exempt" && q.config.recoveryPass)) && (q.period_end === null || q.period_end >= data.today));
   const by = (k: QuestView["kind"]) => data.quests.filter((q) => q.kind === k).filter(visible).sort((a, b) => order(a) - order(b) || b.period_start.localeCompare(a.period_start));
   const tabs: { id: string; label: string; quests: QuestView[]; empty: string }[] = [
     { id: "daily", label: "Daily", quests: [...by("penalty"), ...by("daily")], empty: "Daily quests appear each morning (your local time)." },
@@ -283,7 +283,7 @@ function QuestCard({ q }: { q: QuestView }) {
         {done ? <Pill className="border-emerald-400/50 text-emerald-300 light:text-emerald-800">completed</Pill> : null}
         {q.status === "active" && q.config.penalized && fine ? <Pill className="border-red-500/50 text-red-300 light:text-red-700">fail: −{fine} XP</Pill> : null}
         {failed ? <Pill className="border-red-500/60 text-red-300 light:text-red-700">failed{fine ? ` · −${fine} XP` : ""}</Pill> : null}
-        {q.status === "exempt" ? <Pill>waived (recovery pass)</Pill> : null}
+        {q.status === "exempt" ? <Pill>{q.config.recoveryPass ? "waived (recovery pass)" : "waived"}</Pill> : null}
         {q.status === "expired" ? <Pill>faded (no penalty)</Pill> : null}
         {q.status === "abandoned" ? <Pill>{q.config.penalized && q.kind !== "emergency" ? `abandoned · −${fine} XP` : "declined"}</Pill> : null}
         {q.period_end && q.kind !== "emergency" ? <Pill>{q.period_start === q.period_end ? q.period_start : `${q.period_start} → ${q.period_end}`}</Pill> : null}

@@ -12,7 +12,7 @@ export const CATEGORY_INFO: Record<QuestCategory, { name: string; blurb: string 
   physical: { name: "Physical", blurb: "The daily training regimen. Strength and endurance." },
   intellectual: { name: "Intellectual", blurb: "Study and System Trials. Sharpen the mind." },
   mental: { name: "Mental", blurb: "Reflection and mindfulness. Command yourself." },
-  health: { name: "Health & Recovery", blurb: "Sleep and nutrition. The body rebuilds here." },
+  health: { name: "Health & Recovery", blurb: "Sleep. The body rebuilds here." },
   social: { name: "Social", blurb: "Bonds with the people who matter." },
   financial: { name: "Financial", blurb: "Money habits." },
   discipline: { name: "Discipline", blurb: "Consistency across everything." },

@@ -23,6 +23,8 @@ import { buildSnapshot, type PlayerSnapshot } from "./snapshot";
 
 /** Regimen quests created before this were generated with the original 100/100/100/5 km defaults. */
 const LIGHTER_REGIMEN_SHIPPED = "2026-10-27T06:00:00.000Z";
+/** Daily quests that are no longer issued; any still open are waived rather than failed. */
+const RETIRED_DAILIES = ["daily_nutrition"];
 
 export class GameError extends Error {
   constructor(
@@ -332,6 +334,13 @@ export class GameService {
           have = new Set(data.quests.map((q) => `${q.template_code}|${q.period_start}`));
         }
       }
+    }
+
+    // Retired quest types are waived, not failed (and don't break a perfect day).
+    for (const q of data.quests.filter((x) => RETIRED_DAILIES.includes(x.template_code) && (x.status === "active" || x.status === "offered"))) {
+      await this.svc.update("quests", { id: q.id, user_id: this.userId }, { status: penal ? "exempt" : "expired" });
+      q.status = penal ? "exempt" : "expired";
+      created += 1;
     }
 
     // Time's up

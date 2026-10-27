@@ -211,3 +211,21 @@ describe("penalties", () => {
     expect(snap.xpLedger.some((x) => x.kind === "penalty" && x.source_id === view!.id && x.amount === -10)).toBe(true);
   });
 });
+
+describe("retired daily quests", () => {
+  it("no longer issues the nutrition quest and waives an open one without penalty", async () => {
+    const clock = testClock();
+    const { game, userId } = await onboardedPlayer(db, clock, false);
+    let snap = await game.snapshot();
+    expect(snap.quests.some((q) => q.template_code === "daily_nutrition")).toBe(false);
+    // an account that still has one from before
+    const q = snap.quests.find((x) => x.template_code === "daily_sleep")!;
+    await db.raw("insert into public.quests (user_id, kind, template_code, title, attribute_code, difficulty, period_start, period_end, status, xp_reward, config) values ($1, 'daily', 'daily_nutrition', 'Log your nutrition', 'PHY', 'D', $2, $2, 'active', 25, $3)", [userId, q.period_start, JSON.stringify({ category: "health", penalized: true, penaltyXp: 25 })]);
+    snap = await game.snapshot();
+    expect(snap.quests.find((x) => x.template_code === "daily_nutrition")!.status).toBe("exempt");
+    clock.set("2026-10-21T14:00:00.000Z");
+    snap = await game.snapshot();
+    const n = snap.quests.find((x) => x.template_code === "daily_nutrition")!;
+    expect(snap.xpLedger.some((x) => x.source_id === n.id)).toBe(false);
+  });
+});

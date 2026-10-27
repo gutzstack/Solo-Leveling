@@ -19,7 +19,7 @@ describe("daily quest categories and the training regimen", () => {
     const { game } = await onboardedPlayer(db, testClock());
     const snap = await game.snapshot();
     const daily = snap.quests.filter((q) => q.kind === "daily" && q.period_start === "2026-10-20");
-    expect(new Set(daily.map((q) => q.config.category))).toEqual(new Set(["physical", "intellectual", "mental", "health", "social"]));
+    expect(new Set(daily.map((q) => q.config.category))).toEqual(new Set(["physical", "intellectual", "mental", "health", "social", "discipline"]));
     expect(daily.every((q) => q.config.penalized && (q.config.penaltyXp ?? 0) > 0)).toBe(true);
     const regimen = daily.find((q) => q.template_code === "daily_regimen")!;
     expect(regimen.objectives.map((o) => [o.tracker.type === "activity_quantity" ? o.tracker.activities[0] : o.tracker.type, o.target])).toEqual([
@@ -31,6 +31,8 @@ describe("daily quest categories and the training regimen", () => {
       ["run", 2.41],
     ]);
     expect(regimen.objectives[5].title).toBe("Run 1.5 mi");
+    expect(daily.find((q) => q.template_code === "daily_stretch")!.objectives[0].target).toBe(10);
+    expect(daily.find((q) => q.template_code === "daily_plan")!.config.category).toBe("discipline");
   });
 
   it("completes the regimen from reps logged in sets", async () => {
@@ -91,6 +93,7 @@ describe("rest days and weekly progression", () => {
     const wed = snap.quests.filter((q) => q.kind === "daily" && q.period_start === "2026-10-21");
     expect(wed.some((q) => q.template_code === "daily_regimen")).toBe(false);
     expect(wed.find((q) => q.template_code === "daily_rest")!.config.category).toBe("physical");
+    expect(wed.some((q) => q.template_code === "daily_stretch")).toBe(false);
   });
 
   it("progressRegimen steps up, holds or steps back, capped at the goal", () => {
@@ -227,5 +230,20 @@ describe("retired daily quests", () => {
     snap = await game.snapshot();
     const n = snap.quests.find((x) => x.template_code === "daily_nutrition")!;
     expect(snap.xpLedger.some((x) => x.source_id === n.id)).toBe(false);
+  });
+});
+
+describe("the daily board", () => {
+  it("is fixed once issued: quest types added mid-day start tomorrow", async () => {
+    const clock = testClock();
+    const { game, userId } = await onboardedPlayer(db, clock, false);
+    await game.snapshot();
+    // a board issued before the plan quest existed
+    await db.raw("delete from public.quests where user_id = $1 and template_code = 'daily_plan'", [userId]);
+    const later = await game.snapshot();
+    expect(later.quests.some((q) => q.template_code === "daily_plan" && q.period_start === "2026-10-20")).toBe(false);
+    clock.set("2026-10-21T14:00:00.000Z");
+    const tomorrow = await game.snapshot();
+    expect(tomorrow.quests.some((q) => q.template_code === "daily_plan" && q.period_start === "2026-10-21")).toBe(true);
   });
 });

@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState, PageHeader, Panel, Pill, RankBadge, XpBar } from "@/components/system/primitives";
 import { newKey } from "@/lib/client/api";
 import { useCommand, useSnapshot } from "@/lib/client/use-game";
-import { ACTIVITIES } from "@/lib/domain/activities";
+import { ACTIVITIES, ACTIVITY_BY_TYPE } from "@/lib/domain/activities";
 import { ATTRIBUTES } from "@/lib/domain/attributes";
 import { CATEGORY_INFO, QUEST_CATEGORIES, resolveRegimen, type QuestCategory } from "@/lib/domain/regimen";
 import { questGold } from "@/lib/domain/rewards";
@@ -107,7 +107,7 @@ function DailyBoard({ quests, today }: { quests: QuestView[]; today: string }) {
   return (
     <div className="space-y-6">
       {penalty.length ? (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
           {penalty.map((q) => (
             <QuestCard key={q.id} q={q} />
           ))}
@@ -134,7 +134,7 @@ function DailyBoard({ quests, today }: { quests: QuestView[]; today: string }) {
                 </Button>
               ) : null}
             </div>
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
               {qs.map((q) => (
                 <QuestCard key={q.id} q={q} />
               ))}
@@ -145,7 +145,7 @@ function DailyBoard({ quests, today }: { quests: QuestView[]; today: string }) {
       {uncategorized.length ? (
         <section aria-label="Other">
           <h2 className="sys-title mb-2 text-sm text-fg">Other</h2>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
             {uncategorized.map((q) => (
               <QuestCard key={q.id} q={q} />
             ))}
@@ -184,7 +184,9 @@ function QuickLog({ activity, today }: { activity: string; today: string }) {
   const [custom, setCustom] = useState("");
   const [km, setKm] = useState("");
   const [min, setMin] = useState("");
-  const log = (quantity: number, durationMin: number | null = null) => cmd.mutate({ type: "log_activity", activity, quantity, durationMin, occurredOn: today, idempotencyKey: newKey(activity) });
+  const [plan, setPlan] = useState(["", "", ""]);
+  const log = (quantity: number | null, durationMin: number | null = null, note?: string) => cmd.mutate({ type: "log_activity", activity, quantity, durationMin, occurredOn: today, note, idempotencyKey: newKey(activity) });
+  const err = cmd.error ? <span className="text-xs text-red-300 light:text-red-700">{cmd.error.message}</span> : null;
   if (SET_ACTIVITIES.has(activity))
     return (
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -229,6 +231,44 @@ function QuickLog({ activity, today }: { activity: string; today: string }) {
           Log run
         </Button>
         {cmd.error ? <span className="text-xs text-red-300 light:text-red-700">{cmd.error.message}</span> : null}
+      </form>
+    );
+  if (activity === "daily_plan")
+    return (
+      <form
+        className="mt-1.5 space-y-1.5"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const items = plan.map((x) => x.trim()).filter(Boolean);
+          if (!items.length) return;
+          log(null, null, items.map((x, i) => `${i + 1}. ${x}`).join("\n"));
+        }}
+      >
+        {plan.map((v, i) => (
+          <Input key={i} aria-label={`Priority ${i + 1}`} maxLength={150} className="h-7 text-xs" placeholder={`Priority ${i + 1}`} value={v} onChange={(e) => setPlan((p) => p.map((x, j) => (j === i ? e.target.value : x)))} />
+        ))}
+        <Button type="submit" size="sm" variant="outline" className="h-7 px-2 text-xs" disabled={cmd.isPending || !plan.some((x) => x.trim())}>
+          Lock in plan
+        </Button>
+        {err}
+      </form>
+    );
+  if (ACTIVITY_BY_TYPE[activity]?.requiresDuration)
+    return (
+      <form
+        className="mt-1.5 flex flex-wrap items-center gap-1.5"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const m = Number(min);
+          if (m > 0) log(null, m);
+          setMin("");
+        }}
+      >
+        <Input aria-label="Minutes" type="number" inputMode="numeric" min={1} max={600} className="h-7 w-20 text-xs" placeholder="min" value={min} onChange={(e) => setMin(e.target.value)} />
+        <Button type="submit" size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={cmd.isPending || !min}>
+          Log
+        </Button>
+        {err}
       </form>
     );
   return null;

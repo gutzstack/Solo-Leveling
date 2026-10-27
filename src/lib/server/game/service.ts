@@ -415,7 +415,9 @@ export class GameService {
 
     // Today's board
     const todays = mark(generateDailyQuests(p, data.today, cfg, this.userId, regimen, units));
-    const dailies = missing(todays);
+    // A day's board is fixed once issued: new quest types and category changes start the next day.
+    const boardIssued = data.quests.some((q) => q.kind === "daily" && q.period_start === data.today);
+    const dailies = boardIssued ? [] : missing(todays);
     created += await this.insertQuestDrafts(dailies, baseline());
     created += await this.insertQuestDrafts(mark(missing(generateWeeklyQuests(p, data.today, cfg))), baseline());
     created += await this.insertQuestDrafts(missing(mainQuestDrafts(p, data.today, cfg)), baseline());

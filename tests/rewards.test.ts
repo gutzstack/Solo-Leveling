@@ -15,6 +15,7 @@ const log = (game: GameService, activity: string, quantity: number, day: string)
 
 async function clearRegimen(game: GameService, day: string) {
   for (const a of ["pushups", "situps", "squats", "dips", "pullups"]) await log(game, a, 35, day);
+  await game.execute({ type: "log_activity", activity: "mobility", durationMin: 10, quantity: null, occurredOn: day, idempotencyKey: key("mob") });
   return log(game, "run", 2.5, day);
 }
 
@@ -22,7 +23,7 @@ async function clearRegimen(game: GameService, day: string) {
 async function physicalOnly() {
   const clock = testClock("2026-10-19T14:00:00.000Z"); // Monday
   const p = await onboardedPlayer(db, clock, false);
-  await p.game.execute({ type: "update_settings", settings: { regimen: { restDays: [], categories: { physical: true, intellectual: false, mental: false, health: false, social: false } } } });
+  await p.game.execute({ type: "update_settings", settings: { regimen: { restDays: [], categories: { physical: true, intellectual: false, mental: false, health: false, social: false, discipline: false } } } });
   return p;
 }
 
@@ -84,10 +85,10 @@ describe("gold, chests and the streak multiplier", () => {
     const { game, clock } = await physicalOnly();
     clock.set("2026-10-20T14:00:00.000Z");
     const r = await clearRegimen(game, "2026-10-20");
-    expect(r.snapshot.rewards.balance).toBe(75);
+    expect(r.snapshot.rewards.balance).toBe(85);
     const run = r.snapshot.activities.find((a) => a.type === "run" && a.occurred_on === "2026-10-20")!;
     const after = await game.execute({ type: "delete_activity", activityId: run.id });
-    expect(after.snapshot.rewards.balance).toBe(0);
+    expect(after.snapshot.rewards.balance).toBe(10); // the stretch quest's gold stays
     expect(after.snapshot.rewards.inventory.some((i) => i.item_code === "chest")).toBe(false);
   });
 });

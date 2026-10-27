@@ -5,8 +5,8 @@ import { z } from "zod";
  * Every field has a default, so an empty settings object yields the standard regimen.
  * Changes apply from the next quest board, never to quests already issued.
  */
-export const QUEST_CATEGORIES = ["physical", "intellectual", "mental", "health", "social"] as const;
-export type QuestCategory = (typeof QUEST_CATEGORIES)[number] | "financial" | "discipline";
+export const QUEST_CATEGORIES = ["physical", "intellectual", "mental", "health", "social", "discipline"] as const;
+export type QuestCategory = (typeof QUEST_CATEGORIES)[number] | "financial";
 
 export const CATEGORY_INFO: Record<QuestCategory, { name: string; blurb: string }> = {
   physical: { name: "Physical", blurb: "The daily training regimen. Strength and endurance." },
@@ -15,7 +15,7 @@ export const CATEGORY_INFO: Record<QuestCategory, { name: string; blurb: string 
   health: { name: "Health & Recovery", blurb: "Sleep. The body rebuilds here." },
   social: { name: "Social", blurb: "Bonds with the people who matter." },
   financial: { name: "Financial", blurb: "Money habits." },
-  discipline: { name: "Discipline", blurb: "Consistency across everything." },
+  discipline: { name: "Discipline", blurb: "Plan the day before it plans you." },
 };
 
 const reps = (d: number) => z.number().int().min(0).max(1000).default(d);
@@ -38,7 +38,7 @@ export const ProgressionSchema = z.object({
 });
 
 export const RegimenSchema = z.object({
-  categories: z.object({ physical: z.boolean().default(true), intellectual: z.boolean().default(true), mental: z.boolean().default(true), health: z.boolean().default(true), social: z.boolean().default(true) }).prefault({}),
+  categories: z.object({ physical: z.boolean().default(true), intellectual: z.boolean().default(true), mental: z.boolean().default(true), health: z.boolean().default(true), social: z.boolean().default(true), discipline: z.boolean().default(true) }).prefault({}),
   pushups: reps(35),
   situps: reps(35),
   squats: reps(35),

@@ -49,7 +49,7 @@ const tracks = (p: ProfileRow, a: AttributeCode) => p.tracked_categories.include
 /** A category is on when the regimen enables it and the player tracks a related attribute. */
 export function categoryEnabled(p: ProfileRow, r: Regimen, c: (typeof QUEST_CATEGORIES)[number]): boolean {
   if (!r.categories[c]) return false;
-  const related: Record<(typeof QUEST_CATEGORIES)[number], AttributeCode[]> = { physical: ["STR", "END", "PHY"], intellectual: ["INT"], mental: ["WIS"], health: ["PHY", "WIS"], social: ["CHA"] };
+  const related: Record<(typeof QUEST_CATEGORIES)[number], AttributeCode[]> = { physical: ["STR", "END", "PHY"], intellectual: ["INT"], mental: ["WIS"], health: ["PHY", "WIS"], social: ["CHA"], discipline: ["DIS"] };
   return related[c].some((a) => tracks(p, a));
 }
 
@@ -96,6 +96,14 @@ export function generateDailyQuests(p: ProfileRow, date: ISODate, cfg: XpConfig,
           difficulty: "C",
         }),
       );
+  }
+
+  if (out.some((q) => q.template_code === "daily_regimen")) {
+    out.push(daily(date, cfg, "physical", "daily_stretch", "Stretch after training", "Ten minutes of stretching or mobility once the regimen is done. Cheap insurance against the injuries that cost whole weeks.", "PHY", [{ title: "10 minutes of stretching", tracker: { type: "activity_minutes", activities: ["mobility"] }, target: 10 }], { habit: true }));
+  }
+
+  if (categoryEnabled(p, r, "discipline")) {
+    out.push(daily(date, cfg, "discipline", "daily_plan", "Plan the day: top 3 priorities", "Two minutes, ideally first thing: write down the three things that would make today a win.", "DIS", [{ title: "Lock in today's top 3", tracker: { type: "activity_count", activities: ["daily_plan"] }, target: 1 }], { habit: true }));
   }
 
   if (categoryEnabled(p, r, "intellectual")) {

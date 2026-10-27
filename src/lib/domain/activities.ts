@@ -55,6 +55,7 @@ export const ACTIVITIES: ActivityDef[] = [
   { type: "personal_development", name: "Personal development", attribute: "WIS", xp: 20, dailyCap: 1, minMinutes: 15, requiresDuration: true, icon: "Sprout", group: "wellness" },
   { type: "decision_reflection", name: "Decision-making reflection", attribute: "WIS", xp: 15, dailyCap: 1, minMinutes: 5, requiresDuration: true, icon: "Scale", group: "wellness" },
   { type: "nutrition_log", name: "Nutrition log", attribute: "PHY", xp: 10, dailyCap: 1, requiresDuration: false, icon: "Apple", group: "wellness" },
+  { type: "daily_plan", name: "Daily plan (top 3 priorities)", attribute: "DIS", xp: 10, dailyCap: 1, requiresDuration: false, icon: "ListChecks", group: "life" },
   // Social
   { type: "communication", name: "Communication practice", attribute: "CHA", xp: 20, dailyCap: 2, minMinutes: 10, requiresDuration: true, icon: "MessagesSquare", group: "social" },
   { type: "public_speaking", name: "Public speaking", attribute: "CHA", xp: 60, dailyCap: 1, minMinutes: 3, requiresDuration: true, icon: "Mic", group: "social" },

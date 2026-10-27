@@ -130,7 +130,12 @@ export async function signUp(emailRaw: unknown, passwordRaw: unknown): Promise<{
     const proto = (h.get("x-forwarded-proto") ?? "https").split(",")[0].trim();
     const emailRedirectTo = host ? `${proto}://${host}/auth/callback` : undefined;
     const { data, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo } });
-    if (error) throw new AuthError(error.message);
+    if (error) {
+      // Supabase's built-in mailer allows only a few confirmation emails per hour per project.
+      if (/rate limit/i.test(error.message) || error.status === 429)
+        throw new AuthError("Sign-ups are paused for a bit: the confirmation-email limit was reached. Try again in about an hour. (Site owner: turn off \"Confirm email\" in Supabase, or add custom SMTP, to lift this.)", 429);
+      throw new AuthError(error.message);
+    }
     return { user: data.session && data.user ? { id: data.user.id, email: data.user.email ?? email } : null, needsConfirmation: !data.session };
   }
   const db = await getLocalDb();

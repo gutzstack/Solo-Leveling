@@ -123,3 +123,84 @@ export function improvementVelocity(s: PlayerSnapshot, from: ISODate) {
     .filter((x): x is NonNullable<typeof x> => x !== null)
     .sort((a, b) => b.entries - a.entries);
 }
+
+export interface RunDay {
+  date: ISODate;
+  /** total distance run that day, in the player's units; null when no run was logged */
+  distance: number | null;
+  /** total minutes run */
+  minutes: number | null;
+  /** minutes per mile/km, from the day's totals */
+  pace: number | null;
+  /** the regimen's run target that day, in the player's units */
+  target: number | null;
+  /** least-squares trendline values, between the first and last run (needs 2+ run days) */
+  distanceTrend: number | null;
+  minutesTrend: number | null;
+}
+
+/** Ordinary least squares y = intercept + slope·x; null with fewer than two distinct x. */
+export function linearTrend(points: { x: number; y: number }[]): { slope: number; intercept: number } | null {
+  if (points.length < 2) return null;
+  const n = points.length;
+  const mx = points.reduce((a, p) => a + p.x, 0) / n;
+  const my = points.reduce((a, p) => a + p.y, 0) / n;
+  const sxx = points.reduce((a, p) => a + (p.x - mx) ** 2, 0);
+  if (sxx === 0) return null;
+  const slope = points.reduce((a, p) => a + (p.x - mx) * (p.y - my), 0) / sxx;
+  return { slope, intercept: my - slope * mx };
+}
+
+export interface RunTrends {
+  /** change per week, in the player's units / minutes */
+  distancePerWeek: number | null;
+  minutesPerWeek: number | null;
+}
+
+export function runTrends(days: RunDay[]): RunTrends {
+  const pts = (k: "distance" | "minutes") => days.flatMap((d, i) => (d[k] === null ? [] : [{ x: i, y: d[k] as number }]));
+  const d = linearTrend(pts("distance"));
+  const m = linearTrend(pts("minutes"));
+  return { distancePerWeek: d ? Math.round(d.slope * 7 * 100) / 100 : null, minutesPerWeek: m ? Math.round(m.slope * 7 * 10) / 10 : null };
+}
+
+/** Distance and time run per day (summing every run logged that day), with the regimen target. */
+export function runSeries(s: PlayerSnapshot, from: ISODate): RunDay[] {
+  const per = s.settings.unit_system === "imperial" ? 1.609344 : 1;
+  const byDay = new Map<ISODate, { km: number; min: number }>();
+  for (const a of s.activities) {
+    if (a.type !== "run" || a.occurred_on < from) continue;
+    const d = byDay.get(a.occurred_on) ?? { km: 0, min: 0 };
+    d.km += a.quantity ?? 0;
+    d.min += a.duration_min ?? 0;
+    byDay.set(a.occurred_on, d);
+  }
+  const targets = new Map<ISODate, number>();
+  for (const q of s.quests) {
+    if (q.template_code !== "daily_regimen" || q.period_start < from) continue;
+    const o = q.objectives.find((x) => "activities" in x.tracker && x.tracker.activities.includes("run"));
+    if (o) targets.set(q.period_start, o.target);
+  }
+  const r2 = (x: number) => Math.round(x * 100) / 100;
+  const out: RunDay[] = days(from, s.today).map((date) => {
+    const d = byDay.get(date);
+    const dist = d && d.km > 0 ? d.km / per : null;
+    const t = targets.get(date);
+    return { date, distance: dist === null ? null : r2(dist), minutes: d && d.min > 0 ? Math.round(d.min) : null, pace: dist && d && d.min > 0 ? r2(d.min / dist) : null, target: t === undefined ? null : r2(t / per), distanceTrend: null, minutesTrend: null };
+  });
+  // Trendlines span the first to the last run, like a spreadsheet's linear trendline.
+  for (const k of ["distance", "minutes"] as const) {
+    const pts = out.flatMap((d, i) => (d[k] === null ? [] : [{ x: i, y: d[k] as number }]));
+    const fit = linearTrend(pts);
+    if (!fit) continue;
+    for (let i = pts[0].x; i <= pts[pts.length - 1].x; i++) out[i][k === "distance" ? "distanceTrend" : "minutesTrend"] = r2(Math.max(0, fit.intercept + fit.slope * i));
+  }
+  return out;
+}
+
+/** 7.5 → "7:30" */
+export function formatPace(minutes: number): string {
+  const m = Math.floor(minutes);
+  const s = Math.round((minutes - m) * 60);
+  return s === 60 ? `${m + 1}:00` : `${m}:${String(s).padStart(2, "0")}`;
+}

@@ -247,3 +247,29 @@ describe("the daily board", () => {
     expect(tomorrow.quests.some((q) => q.template_code === "daily_plan" && q.period_start === "2026-10-21")).toBe(true);
   });
 });
+
+describe("daily run chart data", () => {
+  it("sums each day's runs, converts to the player's units and carries the regimen target", async () => {
+    const { runSeries } = await import("@/lib/game/analytics");
+    const clock = testClock();
+    const { game } = await onboardedPlayer(db, clock, false);
+    await reps(game, "run", 1.609344, "2026-10-19");
+    await reps(game, "run", 0.804672, "2026-10-20");
+    const snap = (await reps(game, "run", 1.609344, "2026-10-20")).snapshot;
+    const days = runSeries(snap, "2026-10-18");
+    expect(days.map((d) => d.date)).toEqual(["2026-10-18", "2026-10-19", "2026-10-20"]);
+    expect(days[0]).toMatchObject({ distance: null, minutes: null });
+    expect(days[1]).toMatchObject({ distance: 1, minutes: 30, pace: 30 });
+    expect(days[2]).toMatchObject({ distance: 1.5, minutes: 60, pace: 40, target: 1.5 }); // imperial; target 2.41 km
+  });
+});
+
+describe("linear trend", () => {
+  it("fits a least-squares line", async () => {
+    const { linearTrend, runTrends } = await import("@/lib/game/analytics");
+    expect(linearTrend([{ x: 0, y: 1 }, { x: 1, y: 3 }, { x: 2, y: 5 }])).toEqual({ slope: 2, intercept: 1 });
+    expect(linearTrend([{ x: 0, y: 1 }])).toBeNull();
+    const day = (distance: number | null) => ({ date: "x", distance, minutes: distance === null ? null : distance * 10, pace: null, target: null, distanceTrend: null, minutesTrend: null });
+    expect(runTrends([day(1), day(null), day(1.2)])).toEqual({ distancePerWeek: 0.7, minutesPerWeek: 7 });
+  });
+});

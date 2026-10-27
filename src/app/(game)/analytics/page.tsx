@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
-import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, LineChart, PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ChartCard } from "@/components/game/chart-card";
 import { StreakCalendar } from "@/components/game/streak-calendar";
 import { PageHeader, Panel, Pill } from "@/components/system/primitives";
@@ -10,13 +10,97 @@ import { useSnapshot } from "@/lib/client/use-game";
 import { displayUnit, formatValue } from "@/lib/domain/units";
 import type { UnitKind, UnitSystem } from "@/lib/domain/types";
 import { levelFromXp } from "@/lib/domain/xp";
-import { improvementVelocity, levelSeries, metricSeries, personalRecords, RANGES, rangeStart, rankDistribution, weeklySeries, type RangeKey } from "@/lib/game/analytics";
+import { formatPace, improvementVelocity, levelSeries, metricSeries, personalRecords, RANGES, rangeStart, rankDistribution, runSeries, runTrends, weeklySeries, type RangeKey, type RunDay } from "@/lib/game/analytics";
 
 function axisProps(t: ChartTheme) {
   return { tick: { fill: t.textDim, fontSize: 11 }, stroke: t.axis, tickLine: false };
 }
 function tooltipStyle(t: ChartTheme) {
   return { contentStyle: { background: t.surface, border: `1px solid ${t.axis}`, borderRadius: 8, color: t.text, fontSize: 12 }, cursor: { stroke: t.axis, fill: "rgba(56,189,248,0.06)" } };
+}
+
+/** The run half of the physical quest: distance and time per day, as two charts on one date axis. */
+function DailyRuns({ t, anim, runs, unit }: { t: ChartTheme; anim: boolean; runs: RunDay[]; unit: string }) {
+  const ran = runs.filter((r) => r.distance !== null);
+  const total = ran.reduce((a, r) => a + (r.distance ?? 0), 0);
+  const hitTarget = ran.filter((r) => r.target !== null && (r.distance ?? 0) >= r.target - 0.005).length;
+  const withTarget = runs.filter((r) => r.target !== null).length;
+  const trend = runTrends(runs);
+  const signed = (v: number) => `${v > 0 ? "+" : ""}${v}`;
+  // Clean ticks: half-unit steps up to 5, whole units above.
+  const maxDist = Math.max(0.5, ...runs.map((r) => Math.max(r.distance ?? 0, r.target ?? 0)));
+  const step = maxDist > 5 ? 1 : 0.5;
+  const distTicks = Array.from({ length: Math.ceil(maxDist / step) + 1 }, (_, i) => i * step);
+  // The regimen target, drawn as a short dash over each day's bar.
+  const targetDash = (p: { cx?: number; cy?: number; payload?: RunDay; index?: number }) =>
+    p.cx === undefined || p.cy === undefined || p.payload?.target === null ? <g key={p.index} /> : <line key={p.index} x1={p.cx - 8} x2={p.cx + 8} y1={p.cy} y2={p.cy} stroke={t.text} strokeWidth={2} strokeLinecap="round" />;
+  // Look the day up by its date: the chart drops null values from the payload on rest days.
+  const tooltip = ({ active, label }: { active?: boolean; label?: unknown }) => {
+    const d = active ? runs.find((r) => r.date === label) : undefined;
+    if (!d) return null;
+    return (
+      <div style={tooltipStyle(t).contentStyle} className="px-3 py-2">
+        <p className="mb-1 font-semibold">{d.date}</p>
+        {d.distance !== null ? (
+          <>
+            <p>
+              {d.distance} {unit}
+              {d.target !== null ? ` of ${d.target} ${unit} target` : ""}
+            </p>
+            {d.minutes !== null ? <p>{d.minutes} min{d.pace !== null ? ` · ${formatPace(d.pace)} /${unit}` : ""}</p> : null}
+          </>
+        ) : (
+          <p>No run logged{d.target !== null ? ` (target ${d.target} ${unit})` : ""}</p>
+        )}
+      </div>
+    );
+  };
+  return (
+    <ChartCard
+      title="Daily runs"
+      subtitle={ran.length ? `${ran.length} run day${ran.length === 1 ? "" : "s"} · ${Math.round(total * 100) / 100} ${unit} total${withTarget ? ` · target hit on ${hitTarget} of ${withTarget} regimen days` : ""}` : "Distance and time of each day's runs"}
+      empty={ran.length ? null : "Log a run (from the quest card or Log activity) to start the chart."}
+      height="h-[26rem]"
+      table={{ columns: ["Date", `Distance (${unit})`, `Target (${unit})`, "Minutes", `Pace (min/${unit})`], rows: runs.filter((r) => r.distance !== null || r.target !== null).map((r) => [r.date, r.distance, r.target, r.minutes, r.pace !== null ? formatPace(r.pace) : null]) }}
+    >
+      <div className="flex h-full flex-col gap-2">
+        <p className="font-display text-[10px] tracking-[0.18em] text-dim">
+          DISTANCE ({unit.toUpperCase()})
+          {trend.distancePerWeek !== null ? <span className="ml-2 normal-case tracking-normal text-fg">trend {signed(trend.distancePerWeek)} {unit}/week</span> : null}
+          <span className="ml-2 normal-case tracking-normal text-faint">dashed: linear trend · short line: regimen target</span>
+        </p>
+        <div className="min-h-0 flex-1">
+          <ResponsiveContainer>
+            <ComposedChart data={runs} syncId="runs" margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
+              <CartesianGrid stroke={t.grid} vertical={false} />
+              <XAxis dataKey="date" {...axisProps(t)} minTickGap={28} hide />
+              <YAxis {...axisProps(t)} width={36} ticks={distTicks} domain={[0, distTicks[distTicks.length - 1]]} />
+              <Tooltip content={tooltip} cursor={tooltipStyle(t).cursor} />
+              <Line type="linear" dataKey="distanceTrend" name="Trend" stroke={t.textDim} strokeDasharray="6 4" strokeWidth={1.5} dot={false} activeDot={false} isAnimationActive={anim} />
+              <Line type="linear" dataKey="distance" name="Distance" stroke={t.series[0]} strokeWidth={2} connectNulls dot={{ r: 4, fill: t.series[0], stroke: t.surface, strokeWidth: 2 }} activeDot={{ r: 6, stroke: t.surface, strokeWidth: 2 }} isAnimationActive={anim} />
+              <Line type="linear" dataKey="target" name="Target" stroke="none" dot={targetDash} activeDot={false} isAnimationActive={false} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+        <p className="font-display text-[10px] tracking-[0.18em] text-dim">
+          TIME (MINUTES)
+          {trend.minutesPerWeek !== null ? <span className="ml-2 normal-case tracking-normal text-fg">trend {signed(trend.minutesPerWeek)} min/week</span> : null}
+        </p>
+        <div className="min-h-0 flex-1">
+          <ResponsiveContainer>
+            <ComposedChart data={runs} syncId="runs" margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
+              <CartesianGrid stroke={t.grid} vertical={false} />
+              <XAxis dataKey="date" {...axisProps(t)} minTickGap={28} />
+              <YAxis {...axisProps(t)} width={36} allowDecimals={false} />
+              <Tooltip content={tooltip} cursor={tooltipStyle(t).cursor} />
+              <Line type="linear" dataKey="minutesTrend" name="Trend" stroke={t.textDim} strokeDasharray="6 4" strokeWidth={1.5} dot={false} activeDot={false} isAnimationActive={anim} />
+              <Line type="linear" dataKey="minutes" name="Minutes" stroke={t.series[1]} strokeWidth={2} connectNulls dot={{ r: 4, fill: t.series[1], stroke: t.surface, strokeWidth: 2 }} activeDot={{ r: 6, stroke: t.surface, strokeWidth: 2 }} isAnimationActive={anim} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    </ChartCard>
+  );
 }
 
 export default function AnalyticsPage() {
@@ -28,6 +112,7 @@ export default function AnalyticsPage() {
     return {
       from,
       level: levelSeries(data, from),
+      runs: runSeries(data, from),
       weekly: weeklySeries(data, from),
       strength: metricSeries(data, ["bench_press_1rm", "squat_1rm", "deadlift_1rm", "overhead_press_1rm"], from),
       running: metricSeries(data, ["mile_time", "run_5k", "run_10k", "half_marathon"], from),
@@ -74,6 +159,8 @@ export default function AnalyticsPage() {
         <Panel bodyClassName="p-4"><Kpi label="Personal records" value={String(c.prs.length)} /></Panel>
         <Panel bodyClassName="p-4"><Kpi label="Study hours" value={String(c.weekly.reduce((s, w) => s + w.studyHours, 0).toFixed(1))} /></Panel>
       </div>
+
+      <DailyRuns t={t} anim={anim} runs={c.runs} unit={u === "imperial" ? "mi" : "km"} />
 
       <div className="grid gap-5 lg:grid-cols-2">
         <ChartCard title="Player level history" subtitle="Level reached each day from recorded XP" table={{ columns: ["Date", "Total XP", "Level"], rows: c.level.map((d) => [d.date, d.total, d.level]) }}>

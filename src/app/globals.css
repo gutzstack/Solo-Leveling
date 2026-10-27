@@ -108,7 +108,9 @@ body {
   border-radius: 4px;
 }
 
-/* ───────────── System window ───────────── */
+/* ───────────── System window ─────────────
+   In the components layer so utility classes on the same element (fixed, border colours…) win. */
+@layer components {
 .sys-panel {
   position: relative;
   background: linear-gradient(160deg, var(--panel), var(--panel-2));
@@ -149,6 +151,7 @@ body {
     0 0 0 1px rgba(56, 189, 248, 0.08) inset,
     0 0 42px -6px var(--glow),
     0 0 80px -30px var(--glow-violet);
+}
 }
 
 .holo-sheen {

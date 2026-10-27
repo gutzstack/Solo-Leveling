@@ -59,6 +59,9 @@ try {
       await page.waitForTimeout(400);
     }
     await page.getByRole("button", { name: "Log activity" }).click();
+    // Playwright scrolls to off-screen elements, so assert the dialog is actually in view.
+    const box = await page.getByRole("dialog").boundingBox();
+    if (!box || box.y < 0 || box.y + Math.min(box.height, 200) > 900) throw new Error(`dialog is off-screen: ${JSON.stringify(box)}`);
     await page.getByLabel("Activity", { exact: true }).selectOption("study");
     await page.getByLabel(/Minutes/).fill("95");
     await page.getByRole("button", { name: "Record" }).click();

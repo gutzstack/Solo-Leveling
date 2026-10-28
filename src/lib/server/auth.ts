@@ -4,7 +4,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import { cookies, headers } from "next/headers";
-import { getLocalDb, supabaseUserClient } from "./db";
+import { UsernameSchema } from "../domain/friends";
+import { getDatabase, getLocalDb, serviceClient, supabaseUserClient } from "./db";
+import { UniqueViolationError } from "./db/types";
+import { friendsEnabled } from "./game/penalty";
 import { localDataDir, supabaseConfig } from "./env";
 
 const scrypt = promisify(scryptCb) as (pw: string, salt: Buffer, keylen: number, opts: { N: number; r: number; p: number }) => Promise<Buffer>;
@@ -146,21 +149,90 @@ export async function signUp(emailRaw: unknown, passwordRaw: unknown): Promise<{
   return { user: { id: rows[0].id, email }, needsConfirmation: false };
 }
 
-export async function signIn(emailRaw: unknown, passwordRaw: unknown): Promise<SessionUser> {
-  const { email, password } = validateCredentials(emailRaw, passwordRaw);
+// ───────────────────────── Username accounts ─────────────────────────
+
+/**
+ * Username accounts still need an email for the auth provider, so they get a placeholder on the
+ * reserved .invalid TLD (RFC 2606): it can never be registered or receive mail, and no email is
+ * ever sent for these accounts (they are created already confirmed).
+ */
+export const PLACEHOLDER_EMAIL_DOMAIN = "players.system-irl.invalid";
+export const placeholderEmail = (username: string) => `${username}@${PLACEHOLDER_EMAIL_DOMAIN}`;
+export const isPlaceholderEmail = (email: string | null | undefined) => Boolean(email?.endsWith(`@${PLACEHOLDER_EMAIL_DOMAIN}`));
+
+function validatePassword(password: unknown): string {
+  if (typeof password !== "string" || password.length < 8 || password.length > 128) throw new AuthError("Password must be 8–128 characters.");
+  return password;
+}
+
+export function parseUsername(raw: unknown): string {
+  const parsed = UsernameSchema.safeParse(typeof raw === "string" ? raw : "");
+  if (!parsed.success) throw new AuthError(parsed.error.issues[0]?.message ?? "Invalid username.");
+  return parsed.data;
+}
+
+/** Create an account from a username and password, sign it in, and claim the username. */
+export async function signUpWithUsername(usernameRaw: unknown, passwordRaw: unknown): Promise<SessionUser> {
+  const username = parseUsername(usernameRaw);
+  const password = validatePassword(passwordRaw);
+  const db = await getDatabase();
+  if (!(await friendsEnabled(db))) throw new AuthError("Username sign-up needs database migration 0005 (friends). Sign up with an email for now.", 409);
+  if ((await db.service().select("profiles", { eq: { username } })).length) throw new AuthError(`@${username} is taken. Try another.`, 409);
+  const email = placeholderEmail(username);
+  let userId: string;
+  if (supabaseConfig()) {
+    const admin = serviceClient().auth.admin;
+    const { data, error } = await admin.createUser({ email, password, email_confirm: true, user_metadata: { username } });
+    if (error || !data.user) throw new AuthError(/already|registered|exists/i.test(error?.message ?? "") ? `@${username} is taken. Try another.` : (error?.message ?? "Sign-up failed."), 409);
+    userId = data.user.id;
+  } else {
+    const local = await getLocalDb();
+    const rows = await local.raw<{ id: string }>("insert into auth.users (email, encrypted_password) values ($1, $2) returning id", [email, await hashPassword(password)]);
+    userId = rows[0].id;
+  }
+  // Claim the username on the profile; if someone took it a moment ago, undo the account.
+  try {
+    await db.service().insertIgnore("users", { id: userId, email }, ["id"]);
+    await db.service().insertIgnore("profiles", { user_id: userId }, ["user_id"]);
+    await db.service().update("profiles", { user_id: userId }, { username });
+  } catch (e) {
+    if (supabaseConfig()) await serviceClient().auth.admin.deleteUser(userId);
+    else await (await getLocalDb()).raw("delete from auth.users where id = $1", [userId]);
+    if (e instanceof UniqueViolationError) throw new AuthError(`@${username} is taken. Try another.`, 409);
+    throw e;
+  }
+  return signIn(username, password);
+}
+
+/** Sign-in accepts a username or an email (accounts created with an email keep working). */
+async function resolveLogin(identifier: unknown): Promise<string> {
+  if (typeof identifier !== "string") throw new AuthError("Enter your username or email.");
+  const id = identifier.trim();
+  if (id.includes("@") && !id.startsWith("@")) return id;
+  const username = parseUsername(id);
+  const db = await getDatabase();
+  if (!(await friendsEnabled(db))) throw new AuthError("Invalid username or password.", 401);
+  const profile = (await db.service().select<{ user_id: string }>("profiles", { eq: { username } }))[0];
+  const user = profile ? (await db.service().select<{ email: string | null }>("users", { eq: { id: profile.user_id } }))[0] : undefined;
+  // Unknown usernames fall through to a placeholder that can't match, so the reply is the same.
+  return user?.email ?? placeholderEmail(username);
+}
+
+export async function signIn(identifierRaw: unknown, passwordRaw: unknown): Promise<SessionUser> {
+  const { email, password } = validateCredentials(await resolveLogin(identifierRaw), passwordRaw);
   if (supabaseConfig()) {
     const sb = await supabaseUserClient();
     const { data, error } = await sb.auth.signInWithPassword({ email, password });
     if (error && (error.code === "email_not_confirmed" || /not confirmed/i.test(error.message)))
       throw new AuthError("This account hasn't confirmed its email yet. Click the link in the confirmation email (check spam), or ask the site owner to confirm it in Supabase.", 403);
-    if (error || !data.user) throw new AuthError("Invalid email or password.", 401);
+    if (error || !data.user) throw new AuthError("Invalid username/email or password.", 401);
     return { id: data.user.id, email: data.user.email ?? email };
   }
   const db = await getLocalDb();
   const rows = await db.raw<{ id: string; encrypted_password: string }>("select id, encrypted_password from auth.users where email = $1", [email]);
   // Verify against a dummy hash when the user is missing so timing doesn't reveal which emails exist.
   const ok = await verifyPassword(password, rows[0]?.encrypted_password ?? "scrypt$AAAAAAAAAAAAAAAAAAAAAA==$" + Buffer.alloc(64).toString("base64"));
-  if (!rows[0] || !ok) throw new AuthError("Invalid email or password.", 401);
+  if (!rows[0] || !ok) throw new AuthError("Invalid username/email or password.", 401);
   await db.raw("update auth.users set last_sign_in_at = now() where id = $1", [rows[0].id]);
   await setLocalCookie(rows[0].id);
   return { id: rows[0].id, email };

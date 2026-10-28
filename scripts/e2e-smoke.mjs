@@ -9,7 +9,7 @@ const BASE = process.env.BASE_URL ?? "http://localhost:3000";
 const OUT = process.env.SCREENSHOT_DIR ?? "test-results";
 mkdirSync(OUT, { recursive: true });
 
-const email = `e2e_${Date.now()}@example.test`;
+const username = `e2e_${Date.now().toString().slice(-10)}`;
 const errors = [];
 const browser = await chromium.launch();
 const ctx = await browser.newContext({ viewport: { width: 1360, height: 900 }, reducedMotion: "reduce" });
@@ -29,7 +29,7 @@ try {
   await step("gate & signup", async () => {
     await page.goto(BASE + "/");
     await page.getByRole("button", { name: "Accept" }).click();
-    await page.getByLabel("Email").fill(email);
+    await page.getByLabel("Username", { exact: true }).fill(username);
     await page.getByLabel("Password").fill("correct-horse-battery");
     await page.getByRole("button", { name: "Awaken" }).click();
     await page.waitForURL("**/awakening");
@@ -108,11 +108,21 @@ try {
     await page.screenshot({ path: `${OUT}/06-rewards.png`, fullPage: true });
   });
 
-  await step("friends: choose a username", async () => {
+  await step("friends: the sign-up username is already claimed", async () => {
     await page.goto(BASE + "/friends");
-    await page.getByLabel("Username", { exact: true }).fill(`e2e${Date.now().toString().slice(-8)}`);
-    await page.getByRole("button", { name: "Save" }).click();
-    await page.getByRole("button", { name: "Change" }).waitFor({ timeout: 15000 });
+    await page.getByText(username, { exact: true }).waitFor({ timeout: 15000 });
+  });
+
+  await step("sign in with username in a fresh browser", async () => {
+    const fresh = await browser.newContext({ reducedMotion: "reduce" });
+    const p2 = await fresh.newPage();
+    await p2.goto(BASE + "/");
+    await p2.getByRole("button", { name: "I am already a player" }).click();
+    await p2.getByLabel("Username or email").fill(username);
+    await p2.getByLabel("Password").fill("correct-horse-battery");
+    await p2.getByRole("button", { name: "Enter the System" }).click();
+    await p2.waitForURL("**/status", { timeout: 30000 });
+    await fresh.close();
   });
 
   await step("reasoning trial: complete 12 items", async () => {

@@ -42,7 +42,8 @@ export async function supabaseUserClient(): Promise<SupabaseClient> {
   });
 }
 
-function serviceClient(): SupabaseClient {
+/** Service-role client (server only): bypasses RLS and can administer auth users. */
+export function serviceClient(): SupabaseClient {
   const cfg = supabaseConfig()!;
   g.__sirlService ??= createClient(cfg.url, cfg.serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
   return g.__sirlService;

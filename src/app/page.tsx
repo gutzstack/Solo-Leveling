@@ -15,6 +15,7 @@ export default function Gate() {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("intro");
   const [email, setEmail] = useState("");
+  const [usernames, setUsernames] = useState(false);
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -32,9 +33,10 @@ export default function Gate() {
   }
 
   useEffect(() => {
-    api<{ user: { id: string } | null; backend: string; ephemeral?: boolean }>("/api/auth/me")
+    api<{ user: { id: string } | null; backend: string; ephemeral?: boolean; usernames?: boolean }>("/api/auth/me")
       .then((r) => {
         setBackend(r.backend);
+        setUsernames(Boolean(r.usernames));
         setEphemeral(Boolean(r.ephemeral));
         if (r.user) router.replace(new URLSearchParams(window.location.search).get("next") ?? "/status");
       })
@@ -47,7 +49,7 @@ export default function Gate() {
     setError(null);
     try {
       if (mode === "signup") {
-        const r = await api<{ needsConfirmation: boolean }>("/api/auth/signup", { json: { email, password } });
+        const r = await api<{ needsConfirmation: boolean }>("/api/auth/signup", { json: usernames ? { username: email, password } : { email, password } });
         if (r.needsConfirmation) {
           setInfo("Check your email to confirm your account, then sign in.");
           setMode("login");
@@ -57,7 +59,7 @@ export default function Gate() {
         play("levelup");
         router.replace("/awakening");
       } else {
-        await api("/api/auth/login", { json: { email, password } });
+        await api("/api/auth/login", { json: { identifier: email, password } });
         if (!(await sessionStuck())) return;
         play("notify");
         router.replace(new URLSearchParams(window.location.search).get("next") ?? "/status");
@@ -103,9 +105,19 @@ export default function Gate() {
             <motion.form key={mode} onSubmit={submit} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="sys-panel sys-panel-glow relative space-y-4 p-6" aria-label={mode === "signup" ? "Create account" : "Sign in"}>
               <p className="font-display text-[11px] tracking-[0.3em] text-accent text-glow">{mode === "signup" ? "[PLAYER REGISTRATION]" : "[PLAYER AUTHENTICATION]"}</p>
               {info ? <p className="rounded-lg border border-sky-400/40 bg-sky-500/10 p-2 text-sm text-sky-200 light:text-sky-800">{info}</p> : null}
-              <Field label="Email" htmlFor="email">
-                <Input id="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-              </Field>
+              {mode === "signup" && usernames ? (
+                <Field label="Username" htmlFor="email" hint="3–20 letters, numbers or underscores. Friends add you by this.">
+                  <Input id="email" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} required minLength={3} maxLength={21} value={email} onChange={(e) => setEmail(e.target.value.toLowerCase())} />
+                </Field>
+              ) : mode === "signup" ? (
+                <Field label="Email" htmlFor="email">
+                  <Input id="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+                </Field>
+              ) : (
+                <Field label={usernames ? "Username or email" : "Email"} htmlFor="email">
+                  <Input id="email" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} required value={email} onChange={(e) => setEmail(e.target.value)} />
+                </Field>
+              )}
               <Field label="Password" htmlFor="password" hint={mode === "signup" ? "At least 8 characters." : undefined}>
                 <Input id="password" type="password" autoComplete={mode === "signup" ? "new-password" : "current-password"} required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} />
               </Field>
